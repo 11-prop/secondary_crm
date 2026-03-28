@@ -36,7 +36,7 @@ export default function Layout() {
                     }`}
             >
                 <div className="flex h-16 items-center border-b border-gray-200 px-6">
-                    <span className="text-xl font-bold tracking-tight text-brand-900">Secondary Offplan Properties CRM</span>
+                    <span className="text-xl font-bold tracking-tight text-brand-900">Secondary CRM</span>
                 </div>
 
                 <nav className="flex-1 space-y-1 overflow-y-auto px-4 py-6">

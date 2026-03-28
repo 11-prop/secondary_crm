@@ -1,0 +1,55 @@
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-crm_user}:${POSTGRES_PASSWORD:-crm_password}@${DATABASE_HOST:-postgres}:${DATABASE_PORT:-5432}/${POSTGRES_DB:-real_estate_crm}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:4173}
+      SECRET_KEY: ${SECRET_KEY:-your-super-secret-key-change-in-production}
+      DEFAULT_ADMIN_EMAIL: ${DEFAULT_ADMIN_EMAIL:-}
+      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-}
+      DEFAULT_ADMIN_NAME: ${DEFAULT_ADMIN_NAME:-System Administrator}
+    volumes:
+      - ./uploads:/app/uploads
+    networks:
+      - default
+      - external_postgres
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-4173}:4173"
+    depends_on:
+      - backend
+
+  backup:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      - PGHOST=${DATABASE_HOST:-postgres}
+      - PGPORT=${DATABASE_PORT:-5432}
+      - POSTGRES_USER=${POSTGRES_USER:-crm_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-crm_password}
+      - POSTGRES_DB=${POSTGRES_DB:-real_estate_crm}
+      - BACKUP_SCHEDULE=${BACKUP_SCHEDULE:-0 2 * * *}
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-14}
+      - TZ=${TZ:-Asia/Karachi}
+    volumes:
+      - ./uploads:/data/uploads:ro
+      - ./backups:/backups
+      - ./ops/backup:/scripts:ro
+    command: ["sh", "/scripts/entrypoint.sh"]
+    networks:
+      - default
+      - external_postgres
+
+networks:
+  external_postgres:
+    external: true
+    name: ${EXTERNAL_POSTGRES_NETWORK:?Set EXTERNAL_POSTGRES_NETWORK in the env file}
