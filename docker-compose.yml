@@ -8,13 +8,14 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-crm_user} -d ${POSTGRES_DB:-real_estate_crm}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-crm_user} -d ${POSTGRES_DB:-real_estate_crm}" ]
       interval: 10s
       timeout: 5s
       retries: 5
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: always
 
   backend:
     build: ./backend
@@ -32,6 +33,7 @@ services:
         condition: service_healthy
     volumes:
       - ./uploads:/app/uploads
+    restart: always
 
   frontend:
     build:
@@ -42,6 +44,7 @@ services:
       - "4173:4173"
     depends_on:
       - backend
+    restart: always
 
   backup:
     image: postgres:15-alpine
@@ -61,7 +64,8 @@ services:
       - ./uploads:/data/uploads:ro
       - ./backups:/backups
       - ./ops/backup:/scripts:ro
-    command: ["sh", "/scripts/entrypoint.sh"]
+    command: [ "sh", "/scripts/entrypoint.sh" ]
+    restart: always
 
 volumes:
   postgres_data:
