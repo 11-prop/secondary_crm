@@ -5,3 +5,5 @@ from .floor_plan import FloorPlan
 from .property import Property
 from .transaction import Transaction
 from .user import User
+from .agent import Agent
+from .interaction_note import InteractionNote

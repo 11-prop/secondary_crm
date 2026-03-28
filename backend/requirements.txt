@@ -1,9 +1,11 @@
 fastapi
-uvicorn
-sqlalchemy
+openpyxl
+pandas
+passlib[bcrypt]
 psycopg2-binary
 pydantic
-passlib[bcrypt]
 PyJWT
-python-multipart
 python-dotenv
+python-multipart
+sqlalchemy
+uvicorn

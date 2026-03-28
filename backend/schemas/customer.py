@@ -1,6 +1,6 @@
 # backend/schemas/customer.py
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime
 
 class CustomerBase(BaseModel):
@@ -9,18 +9,16 @@ class CustomerBase(BaseModel):
     phone_number: Optional[str] = None
     email: Optional[str] = None
     client_type: str = 'Prospect'
-    comments_notes: Optional[str] = None
+    # Lead Protection Fields
+    assigned_buyer_agent_id: Optional[int] = None
+    assigned_seller_agent_id: Optional[int] = None
 
 class CustomerCreate(CustomerBase):
     pass
 
-class CustomerUpdate(BaseModel):
+class CustomerUpdate(CustomerBase):
     first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    phone_number: Optional[str] = None
-    email: Optional[str] = None
     client_type: Optional[str] = None
-    comments_notes: Optional[str] = None
 
 class CustomerResponse(CustomerBase):
     customer_id: int

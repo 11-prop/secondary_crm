@@ -21,6 +21,8 @@ services:
       - DATABASE_URL=postgresql://crm_user:crm_password@db:5432/real_estate_crm
     depends_on:
       - db
+    volumes:
+      - ./uploads:/app/uploads
 
   frontend:
     build: ./frontend
