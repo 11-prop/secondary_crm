@@ -4,7 +4,6 @@ import { ArrowRight, Building2, NotebookTabs, ShieldCheck, Users } from "lucide-
 
 import Card from "../components/Card";
 import { listAgents, listCustomers, listNotesByCustomer, listProperties, listUsers } from "../api/resources";
-import { demoAgents, demoCustomers, demoInteractionNotes, demoProperties, demoUsers } from "../data/demoData";
 import { formatCustomerName, formatDateLabel } from "../lib/formatters";
 
 const quickLinks = [
@@ -22,8 +21,7 @@ export default function Dashboard() {
         users: [],
         recentNotes: [],
         isLoading: true,
-        isDemo: false,
-        warning: "",
+        error: "",
     });
 
     useEffect(() => {
@@ -62,8 +60,7 @@ export default function Dashboard() {
                     users: usersResponse.items,
                     recentNotes,
                     isLoading: false,
-                    isDemo: false,
-                    warning: "",
+                    error: "",
                 });
             } catch (error) {
                 if (!isActive) {
@@ -71,14 +68,13 @@ export default function Dashboard() {
                 }
 
                 setState({
-                    customers: demoCustomers,
-                    properties: demoProperties,
-                    agents: demoAgents,
-                    users: demoUsers,
-                    recentNotes: demoInteractionNotes,
+                    customers: [],
+                    properties: [],
+                    agents: [],
+                    users: [],
+                    recentNotes: [],
                     isLoading: false,
-                    isDemo: true,
-                    warning: error.message,
+                    error: error.message,
                 });
             }
         }
@@ -104,9 +100,9 @@ export default function Dashboard() {
                         Track roster health, customer coverage, and the screens that still need attention.
                     </p>
                 </div>
-                {state.isDemo && (
+                {state.error && (
                     <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-                        Demo data is active because the API did not respond. {state.warning}
+                        Unable to load dashboard data. {state.error}
                     </div>
                 )}
             </div>

@@ -22,20 +22,30 @@ class Settings:
         "DATABASE_URL",
         "postgresql://crm_user:crm_password@db:5432/real_estate_crm",
     )
-    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:4173")
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your-super-secret-key-change-in-production")
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7
     UPLOAD_DIRECTORY: str = os.getenv("UPLOAD_DIRECTORY", DEFAULT_UPLOAD_DIRECTORY)
+    DEFAULT_ADMIN_EMAIL: str = os.getenv("DEFAULT_ADMIN_EMAIL", "")
+    DEFAULT_ADMIN_PASSWORD: str = os.getenv("DEFAULT_ADMIN_PASSWORD", "")
+    DEFAULT_ADMIN_NAME: str = os.getenv("DEFAULT_ADMIN_NAME", "System Administrator")
 
     @property
     def CORS_ORIGINS(self) -> List[str]:
         return [
-            "http://localhost",
-            "http://localhost:80",
-            "http://localhost:3000",
-            "http://localhost:5173",
-            self.FRONTEND_URL,
+            origin
+            for origin in dict.fromkeys(
+                [
+                    "http://localhost",
+                    "http://localhost:80",
+                    "http://localhost:3000",
+                    "http://localhost:5173",
+                    "http://localhost:4173",
+                    self.FRONTEND_URL,
+                ]
+            )
+            if origin
         ]
 
 

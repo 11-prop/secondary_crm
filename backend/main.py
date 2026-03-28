@@ -4,13 +4,45 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from configs.settings import settings, engine, Base
+from configs.settings import settings, engine, Base, SessionLocal
+from core.security import get_password_hash
+from models.user import User
 
 from api import auth, customers, properties, agents, projects, floor_plans, interaction_notes, transactions, uploads, import_data, users
 
 # Create database tables if they don't exist yet
 # (Though init.sql handles this via Docker, it's safe to keep for SQLAlchemy)
 Base.metadata.create_all(bind=engine)
+
+
+def ensure_bootstrap_admin():
+    """
+    Create the first admin account from environment variables when the database
+    is empty. This keeps credentials out of source control and avoids reseeding
+    demo users on subsequent restarts.
+    """
+    if not settings.DEFAULT_ADMIN_EMAIL or not settings.DEFAULT_ADMIN_PASSWORD:
+        return
+
+    db = SessionLocal()
+    try:
+        if db.query(User).count() > 0:
+            return
+
+        admin = User(
+            email=settings.DEFAULT_ADMIN_EMAIL,
+            hashed_password=get_password_hash(settings.DEFAULT_ADMIN_PASSWORD),
+            full_name=settings.DEFAULT_ADMIN_NAME,
+            is_admin=True,
+            is_active=True,
+        )
+        db.add(admin)
+        db.commit()
+    finally:
+        db.close()
+
+
+ensure_bootstrap_admin()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

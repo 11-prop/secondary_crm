@@ -1,8 +1,24 @@
 // frontend/src/api/client.js
 import axios from 'axios';
 
-// Fallback to localhost just in case the env var is missing during local dev
-const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+function resolveBaseURL() {
+    const configuredBaseURL = import.meta.env.VITE_API_BASE_URL;
+
+    if (typeof window !== 'undefined') {
+        const isDirectLocalPreview =
+            window.location.hostname === 'localhost' &&
+            window.location.port === '4173' &&
+            (!configuredBaseURL || configuredBaseURL === '/api');
+
+        if (isDirectLocalPreview) {
+            return `${window.location.protocol}//${window.location.hostname}:8000/api`;
+        }
+    }
+
+    return configuredBaseURL || 'http://localhost:8000/api';
+}
+
+const baseURL = resolveBaseURL();
 
 const apiClient = axios.create({
     baseURL: baseURL,

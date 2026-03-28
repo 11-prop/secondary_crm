@@ -9,7 +9,7 @@ CREATE TABLE users (
     hashed_password VARCHAR(255) NOT NULL,
     full_name VARCHAR(100),
     is_active BOOLEAN DEFAULT TRUE,
-    is_admin BOOLEAN DEFAULT TRUE,
+    is_admin BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -100,47 +100,9 @@ CREATE TABLE transactions (
 );
 
 -- =========================================================================
--- INITIAL DUMMY DATA FOR TESTING
+-- INITIAL STATE
 -- =========================================================================
 
--- Insert default Admin User (Password is 'admin' hashed with bcrypt for testing)
-INSERT INTO users (email, hashed_password, full_name, is_admin) VALUES
-('admin@crm.local', '$2b$12$Vy3zaYDGUKAd/nSIduxLuejIE6ntgPkK/f2QNFcPTiAlDkvhfVYVa', 'System Admin', TRUE);
-
--- Insert Agents
-INSERT INTO agents (name, agent_type) VALUES
-('Alice Buyer', 'Buyer'),
-('Bob Buyer', 'Buyer'),
-('Charlie Seller', 'Seller'),
-('Diana Seller', 'Seller');
-
--- Insert Customers
-INSERT INTO customers (first_name, last_name, phone_number, email, client_type, assigned_buyer_agent_id, assigned_seller_agent_id) VALUES
-('John', 'Doe', '555-0100', 'john@example.com', 'Both', 1, 3),
-('Sarah', 'Smith', '555-0200', 'sarah@example.com', 'Buyer', 2, NULL);
-
--- Insert Interaction Notes
-INSERT INTO interaction_notes (customer_id, agent_id, note_text) VALUES
-(1, 3, 'John called to discuss listing his current villa.'),
-(1, 1, 'Sent John some beachfront properties to consider buying.'),
-(2, 2, 'Sarah attended an open house for a park-front townhouse.');
-
--- Insert Projects
-INSERT INTO projects (project_name, neighborhood_name, layout_plan_path) VALUES
-('Palm Jumeirah', 'Frond A', '/uploads/projects/palm_layout.jpg'),
-('The Springs', 'Springs 4', '/uploads/projects/springs_layout.jpg');
-
--- Insert Floor Plans
-INSERT INTO floor_plans (project_id, plan_name, number_of_rooms, square_footage, amenities, floor_plan_image_path) VALUES
-(1, 'Signature Villa', 6, 7000, 'Private Pool, Maid Room, Driver Room', '/uploads/plans/signature_villa.jpg'),
-(2, 'Type 3M', 3, 2450, 'Study Room, Landscaped Garden', '/uploads/plans/type_3m.jpg');
-
--- Insert Properties
-INSERT INTO properties (villa_number, owner_customer_id, project_id, plan_id, property_status, is_corner, is_beach, is_lake_front) VALUES
-('Villa 12', 1, 1, 1, 'Active Listing', TRUE, TRUE, FALSE),
-('Townhouse 84', 1, 2, 2, 'Rented', FALSE, FALSE, TRUE);
-
--- Insert Historical Transactions
-INSERT INTO transactions (property_id, transaction_date, transaction_type, price, notes) VALUES
-(2, '2023-01-15', 'Rent', 150000, '1-year lease signed.'),
-(1, '2020-05-10', 'Sale', 12000000, 'Original purchase by John Doe.');
+-- This schema intentionally inserts no demo users, no default passwords,
+-- and no sample CRM records. The first admin account is provisioned by the
+-- backend from environment variables when the database is empty.

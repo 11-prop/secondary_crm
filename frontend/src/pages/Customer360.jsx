@@ -16,15 +16,6 @@ import {
     resolveAssetUrl,
     updateCustomer,
 } from '../api/resources';
-import {
-    demoAgents,
-    demoCustomers,
-    demoFloorPlans,
-    demoInteractionNotes,
-    demoProjects,
-    demoProperties,
-    demoTransactions,
-} from '../data/demoData';
 import { formatCurrency, formatCustomerName, formatDateLabel, getPropertyAttributeTags, getPropertyStatusClasses } from '../lib/formatters';
 
 const emptyPropertyForm = { villa_number: '', project_id: '', plan_id: '', property_status: 'Off-Market', is_corner: false, is_lake_front: false, is_park_front: false, is_beach: false, is_market: false };
@@ -32,7 +23,7 @@ const emptyPropertyForm = { villa_number: '', project_id: '', plan_id: '', prope
 export default function Customer360() {
     const { id } = useParams();
     const customerId = Number(id);
-    const [data, setData] = useState({ customer: null, agents: [], notes: [], properties: [], projects: [], plans: [], tx: {}, isLoading: true, isDemo: false, warning: '', error: '' });
+    const [data, setData] = useState({ customer: null, agents: [], notes: [], properties: [], projects: [], plans: [], tx: {}, isLoading: true, error: '' });
     const [assignments, setAssignments] = useState({ buyer: '', seller: '' });
     const [noteText, setNoteText] = useState('');
     const [noteAgentId, setNoteAgentId] = useState('');
@@ -59,29 +50,10 @@ export default function Customer360() {
             ]);
             const owned = propertiesRes.items.filter((property) => property.owner_customer_id === customerId);
             const txEntries = await Promise.all(owned.map(async (property) => [property.property_id, (await listTransactionsByProperty(property.property_id)).items]));
-            setData({ customer, agents: agentsRes.items, notes: notesRes.items, properties: propertiesRes.items, projects: projectsRes.items, plans: plansRes.items, tx: Object.fromEntries(txEntries), isLoading: false, isDemo: false, warning: '', error: '' });
+            setData({ customer, agents: agentsRes.items, notes: notesRes.items, properties: propertiesRes.items, projects: projectsRes.items, plans: plansRes.items, tx: Object.fromEntries(txEntries), isLoading: false, error: '' });
             setAssignments({ buyer: customer.assigned_buyer_agent_id || '', seller: customer.assigned_seller_agent_id || '' });
         } catch (error) {
-            const customer = demoCustomers.find((item) => item.customer_id === customerId);
-            if (!customer) {
-                setData({ customer: null, agents: [], notes: [], properties: [], projects: [], plans: [], tx: {}, isLoading: false, isDemo: true, warning: error.message, error: 'Customer not found.' });
-                return;
-            }
-            const owned = demoProperties.filter((property) => property.owner_customer_id === customerId);
-            setData({
-                customer,
-                agents: demoAgents,
-                notes: demoInteractionNotes.filter((note) => note.customer_id === customerId),
-                properties: demoProperties,
-                projects: demoProjects,
-                plans: demoFloorPlans,
-                tx: Object.fromEntries(owned.map((property) => [property.property_id, demoTransactions.filter((tx) => tx.property_id === property.property_id)])),
-                isLoading: false,
-                isDemo: true,
-                warning: error.message,
-                error: '',
-            });
-            setAssignments({ buyer: customer.assigned_buyer_agent_id || '', seller: customer.assigned_seller_agent_id || '' });
+            setData({ customer: null, agents: [], notes: [], properties: [], projects: [], plans: [], tx: {}, isLoading: false, error: error.message });
         }
     }
 
@@ -90,12 +62,10 @@ export default function Customer360() {
         setSavingAssignments(true);
         const payload = { assigned_buyer_agent_id: assignments.buyer ? Number(assignments.buyer) : null, assigned_seller_agent_id: assignments.seller ? Number(assignments.seller) : null };
         try {
-            if (data.isDemo) {
-                setData((current) => ({ ...current, customer: { ...current.customer, ...payload } }));
-            } else {
-                const customer = await updateCustomer(customerId, payload);
-                setData((current) => ({ ...current, customer }));
-            }
+            const customer = await updateCustomer(customerId, payload);
+            setData((current) => ({ ...current, customer, error: '' }));
+        } catch (error) {
+            setData((current) => ({ ...current, error: error.message }));
         } finally {
             setSavingAssignments(false);
         }
@@ -107,10 +77,12 @@ export default function Customer360() {
         setSavingNote(true);
         const payload = { customer_id: customerId, agent_id: noteAgentId ? Number(noteAgentId) : null, note_text: noteText.trim() };
         try {
-            const note = data.isDemo ? { ...payload, note_id: Date.now(), created_at: new Date().toISOString() } : await createNote(payload);
-            setData((current) => ({ ...current, notes: [note, ...current.notes] }));
+            const note = await createNote(payload);
+            setData((current) => ({ ...current, notes: [note, ...current.notes], error: '' }));
             setNoteText('');
             setNoteAgentId('');
+        } catch (error) {
+            setData((current) => ({ ...current, error: error.message }));
         } finally {
             setSavingNote(false);
         }
@@ -132,17 +104,19 @@ export default function Customer360() {
             is_market: propertyForm.is_market,
         };
         try {
-            const property = data.isDemo ? { ...payload, property_id: Date.now(), created_at: new Date().toISOString() } : await createProperty(payload);
-            setData((current) => ({ ...current, properties: [property, ...current.properties], tx: { ...current.tx, [property.property_id]: [] } }));
+            const property = await createProperty(payload);
+            setData((current) => ({ ...current, properties: [property, ...current.properties], tx: { ...current.tx, [property.property_id]: [] }, error: '' }));
             setPropertyForm(emptyPropertyForm);
             setShowPropertyForm(false);
+        } catch (error) {
+            setData((current) => ({ ...current, error: error.message }));
         } finally {
             setSavingProperty(false);
         }
     }
 
     if (data.isLoading) return <div className="py-16 text-center text-sm font-medium text-gray-500">Loading customer profile...</div>;
-    if (data.error || !data.customer) return <div className="rounded-3xl border border-red-100 bg-red-50 p-8 text-red-800">{data.error || 'Unable to load this customer.'}</div>;
+    if (!data.customer) return <div className="rounded-3xl border border-red-100 bg-red-50 p-8 text-red-800">{data.error || 'Unable to load this customer.'}</div>;
 
     const buyerAgents = data.agents.filter((agent) => agent.agent_type === 'Buyer' && agent.is_active);
     const sellerAgents = data.agents.filter((agent) => agent.agent_type === 'Seller' && agent.is_active);
@@ -157,7 +131,7 @@ export default function Customer360() {
     return (
         <div className="space-y-6">
             <Link to="/customers" className="inline-flex items-center gap-2 text-sm font-bold text-brand-600"><ChevronLeft className="h-4 w-4" /> Back to customers</Link>
-            {data.isDemo && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Demo mode is active for this screen. {data.warning}</div>}
+            {data.error && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Unable to update this customer flow. {data.error}</div>}
 
             <div className="flex flex-col gap-6 rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex items-center gap-4">

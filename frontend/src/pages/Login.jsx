@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { AlertCircle, KeyRound, Loader2, Lock, Mail } from 'lucide-react';
+import { AlertCircle, Loader2, Lock, Mail } from 'lucide-react';
 
 import { useAuth } from '../context/AuthContext';
-import { demoCredentials } from '../data/demoData';
 
 export default function Login() {
     const [email, setEmail] = useState('');
@@ -59,7 +58,7 @@ export default function Login() {
                                     type="email"
                                     required
                                     className="block w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-3 text-sm outline-none transition-all focus:border-brand-500 focus:bg-white focus:ring-2 focus:ring-brand-500/20"
-                                    placeholder="admin@crm.local"
+                                    placeholder="name@company.com"
                                     value={email}
                                     onChange={(event) => setEmail(event.target.value)}
                                 />
@@ -91,31 +90,6 @@ export default function Login() {
                             {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Sign In'}
                         </button>
                     </form>
-
-                    <div className="mt-6 rounded-2xl border border-sky-100 bg-sky-50 p-4 text-sm text-sky-900">
-                        <div className="flex items-start gap-3">
-                            <KeyRound className="mt-0.5 h-5 w-5 shrink-0 text-sky-600" />
-                            <div className="space-y-3">
-                                <div>
-                                    <p className="font-bold">Frontend fallback is available while the API is being finished.</p>
-                                    <p className="mt-1 text-sky-800/80">Use the demo credentials below if the backend is offline.</p>
-                                </div>
-                                <div className="rounded-xl bg-white/80 px-3 py-2 font-mono text-xs">
-                                    {demoCredentials.email} / {demoCredentials.password}
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setEmail(demoCredentials.email);
-                                        setPassword(demoCredentials.password);
-                                    }}
-                                    className="text-xs font-black uppercase tracking-[0.2em] text-sky-700"
-                                >
-                                    Fill demo credentials
-                                </button>
-                            </div>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>

@@ -12,7 +12,6 @@ import {
     listUsers,
     uploadImage,
 } from '../api/resources';
-import { demoFloorPlans, demoProjects, demoUsers } from '../data/demoData';
 import { formatDateLabel } from '../lib/formatters';
 
 const emptyProjectForm = { project_name: '', neighborhood_name: '', file: null };
@@ -21,7 +20,7 @@ const emptyUserForm = { full_name: '', email: '', password: '' };
 
 export default function Settings() {
     const [activeTab, setActiveTab] = useState('import');
-    const [data, setData] = useState({ projects: [], plans: [], users: [], isDemo: false, warning: '' });
+    const [data, setData] = useState({ projects: [], plans: [], users: [], error: '' });
     const [isUploading, setIsUploading] = useState(false);
     const [importResult, setImportResult] = useState(null);
     const [projectForm, setProjectForm] = useState(emptyProjectForm);
@@ -38,9 +37,9 @@ export default function Settings() {
     async function loadSettingsData() {
         try {
             const [projectsRes, plansRes, usersRes] = await Promise.all([listProjects(), listFloorPlans(), listUsers()]);
-            setData({ projects: projectsRes.items, plans: plansRes.items, users: usersRes.items, isDemo: false, warning: '' });
+            setData({ projects: projectsRes.items, plans: plansRes.items, users: usersRes.items, error: '' });
         } catch (error) {
-            setData({ projects: demoProjects, plans: demoFloorPlans, users: demoUsers, isDemo: true, warning: error.message });
+            setData({ projects: [], plans: [], users: [], error: error.message });
         }
     }
 
@@ -49,8 +48,11 @@ export default function Settings() {
         if (!file) return;
         setIsUploading(true);
         try {
-            const result = data.isDemo ? { customers_added: 12, properties_added: 7 } : await importSpreadsheet(file);
+            const result = await importSpreadsheet(file);
             setImportResult(result);
+            setData((current) => ({ ...current, error: '' }));
+        } catch (error) {
+            setData((current) => ({ ...current, error: error.message }));
         } finally {
             setIsUploading(false);
         }
@@ -60,11 +62,13 @@ export default function Settings() {
         event.preventDefault();
         setSavingProject(true);
         try {
-            const layout_plan_path = data.isDemo || !projectForm.file ? `/uploads/projects/${projectForm.project_name.replace(/\s+/g, '-').toLowerCase()}.jpg` : await uploadImage('projects', projectForm.file);
+            const layout_plan_path = projectForm.file ? await uploadImage('projects', projectForm.file) : null;
             const payload = { project_name: projectForm.project_name, neighborhood_name: projectForm.neighborhood_name || null, layout_plan_path };
-            const project = data.isDemo ? { ...payload, project_id: Date.now() } : await createProject(payload);
-            setData((current) => ({ ...current, projects: [project, ...current.projects] }));
+            const project = await createProject(payload);
+            setData((current) => ({ ...current, projects: [project, ...current.projects], error: '' }));
             setProjectForm(emptyProjectForm);
+        } catch (error) {
+            setData((current) => ({ ...current, error: error.message }));
         } finally {
             setSavingProject(false);
         }
@@ -74,7 +78,7 @@ export default function Settings() {
         event.preventDefault();
         setSavingPlan(true);
         try {
-            const floor_plan_image_path = data.isDemo || !planForm.file ? `/uploads/plans/${planForm.plan_name.replace(/\s+/g, '-').toLowerCase()}.jpg` : await uploadImage('plans', planForm.file);
+            const floor_plan_image_path = planForm.file ? await uploadImage('plans', planForm.file) : null;
             const payload = {
                 project_id: Number(planForm.project_id),
                 plan_name: planForm.plan_name,
@@ -83,9 +87,11 @@ export default function Settings() {
                 amenities: planForm.amenities || null,
                 floor_plan_image_path,
             };
-            const plan = data.isDemo ? { ...payload, plan_id: Date.now() } : await createFloorPlan(payload);
-            setData((current) => ({ ...current, plans: [plan, ...current.plans] }));
+            const plan = await createFloorPlan(payload);
+            setData((current) => ({ ...current, plans: [plan, ...current.plans], error: '' }));
             setPlanForm(emptyPlanForm);
+        } catch (error) {
+            setData((current) => ({ ...current, error: error.message }));
         } finally {
             setSavingPlan(false);
         }
@@ -96,9 +102,11 @@ export default function Settings() {
         setSavingUser(true);
         try {
             const payload = { ...userForm, is_admin: true, is_active: true };
-            const user = data.isDemo ? { ...payload, user_id: Date.now(), created_at: new Date().toISOString() } : await createUser(payload);
-            setData((current) => ({ ...current, users: [user, ...current.users] }));
+            const user = await createUser(payload);
+            setData((current) => ({ ...current, users: [user, ...current.users], error: '' }));
             setUserForm(emptyUserForm);
+        } catch (error) {
+            setData((current) => ({ ...current, error: error.message }));
         } finally {
             setSavingUser(false);
         }
@@ -111,7 +119,7 @@ export default function Settings() {
                 <p className="mt-1 text-gray-500">Configure imports, maintain visual assets, and manage analyst access.</p>
             </div>
 
-            {data.isDemo && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Demo mode is active for this screen. {data.warning}</div>}
+            {data.error && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Unable to fully load or update system settings. {data.error}</div>}
 
             <div className="flex gap-2 border-b border-gray-200">
                 {[

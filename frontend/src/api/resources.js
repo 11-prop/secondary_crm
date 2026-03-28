@@ -16,7 +16,7 @@ export function normalizeApiError(error) {
 
     return {
         status: 0,
-        message: "The API is unavailable right now. Demo mode can keep the frontend moving.",
+        message: "The API is unavailable right now. Check the backend service and API base URL.",
         isNetworkError: true,
     };
 }

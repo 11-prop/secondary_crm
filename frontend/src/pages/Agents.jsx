@@ -3,15 +3,13 @@ import { BriefcaseBusiness, Plus, Search, ShieldCheck } from 'lucide-react';
 
 import Card from '../components/Card';
 import { createAgent, listAgents, listCustomers } from '../api/resources';
-import { demoAgents, demoCustomers } from '../data/demoData';
 import { formatCustomerName, formatDateLabel, getAgentTypeClasses } from '../lib/formatters';
 
 export default function Agents() {
     const [agents, setAgents] = useState([]);
     const [customers, setCustomers] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
-    const [isDemo, setIsDemo] = useState(false);
-    const [warning, setWarning] = useState('');
+    const [error, setError] = useState('');
     const [isCreating, setIsCreating] = useState(false);
     const [form, setForm] = useState({ name: '', agent_type: 'Buyer' });
 
@@ -24,13 +22,11 @@ export default function Agents() {
             const [agentsRes, customersRes] = await Promise.all([listAgents(), listCustomers()]);
             setAgents(agentsRes.items);
             setCustomers(customersRes.items);
-            setIsDemo(false);
-            setWarning('');
+            setError('');
         } catch (error) {
-            setAgents(demoAgents);
-            setCustomers(demoCustomers);
-            setIsDemo(true);
-            setWarning(error.message);
+            setAgents([]);
+            setCustomers([]);
+            setError(error.message);
         }
     }
 
@@ -38,9 +34,12 @@ export default function Agents() {
         event.preventDefault();
         setIsCreating(true);
         try {
-            const agent = isDemo ? { ...form, agent_id: Date.now(), is_active: true, created_at: new Date().toISOString() } : await createAgent(form);
+            const agent = await createAgent(form);
             setAgents((current) => [agent, ...current]);
             setForm({ name: '', agent_type: 'Buyer' });
+            setError('');
+        } catch (error) {
+            setError(error.message);
         } finally {
             setIsCreating(false);
         }
@@ -56,7 +55,7 @@ export default function Agents() {
                 <p className="mt-1 text-gray-500">Onboard specialists and monitor how lead protection is distributed across the team.</p>
             </div>
 
-            {isDemo && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Demo mode is active for this screen. {warning}</div>}
+            {error && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Unable to load or update agents. {error}</div>}
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <StatCard label="Buyer Specialists" value={agents.filter((agent) => agent.agent_type === 'Buyer').length} />

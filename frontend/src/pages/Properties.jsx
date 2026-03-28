@@ -13,14 +13,13 @@ import {
     listTransactionsByProperty,
     updateProperty,
 } from '../api/resources';
-import { demoCustomers, demoFloorPlans, demoProjects, demoProperties, demoTransactions } from '../data/demoData';
 import { formatCurrency, formatCustomerName, formatDateLabel, getPropertyAttributeTags } from '../lib/formatters';
 
 const emptyPropertyForm = { villa_number: '', owner_customer_id: '', project_id: '', plan_id: '', property_status: 'Off-Market', is_corner: false, is_lake_front: false, is_park_front: false, is_beach: false, is_market: false };
 const emptyTransactionForm = { transaction_date: '', transaction_type: 'Sale', price: '', notes: '' };
 
 export default function Properties() {
-    const [data, setData] = useState({ properties: [], customers: [], projects: [], plans: [], tx: {}, isLoading: true, isDemo: false, warning: '' });
+    const [data, setData] = useState({ properties: [], customers: [], projects: [], plans: [], tx: {}, isLoading: true, error: '' });
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('All');
     const [showPropertyForm, setShowPropertyForm] = useState(false);
@@ -43,17 +42,16 @@ export default function Properties() {
                 listFloorPlans(),
             ]);
             const txEntries = await Promise.all(propertiesRes.items.map(async (property) => [property.property_id, (await listTransactionsByProperty(property.property_id)).items]));
-            setData({ properties: propertiesRes.items, customers: customersRes.items, projects: projectsRes.items, plans: plansRes.items, tx: Object.fromEntries(txEntries), isLoading: false, isDemo: false, warning: '' });
+            setData({ properties: propertiesRes.items, customers: customersRes.items, projects: projectsRes.items, plans: plansRes.items, tx: Object.fromEntries(txEntries), isLoading: false, error: '' });
         } catch (error) {
             setData({
-                properties: demoProperties,
-                customers: demoCustomers,
-                projects: demoProjects,
-                plans: demoFloorPlans,
-                tx: Object.fromEntries(demoProperties.map((property) => [property.property_id, demoTransactions.filter((tx) => tx.property_id === property.property_id)])),
+                properties: [],
+                customers: [],
+                projects: [],
+                plans: [],
+                tx: {},
                 isLoading: false,
-                isDemo: true,
-                warning: error.message,
+                error: error.message,
             });
         }
     }
@@ -74,22 +72,24 @@ export default function Properties() {
             is_market: propertyForm.is_market,
         };
         try {
-            const property = data.isDemo ? { ...payload, property_id: Date.now(), created_at: new Date().toISOString() } : await createProperty(payload);
-            setData((current) => ({ ...current, properties: [property, ...current.properties], tx: { ...current.tx, [property.property_id]: [] } }));
+            const property = await createProperty(payload);
+            setData((current) => ({ ...current, properties: [property, ...current.properties], tx: { ...current.tx, [property.property_id]: [] }, error: '' }));
             setPropertyForm(emptyPropertyForm);
             setShowPropertyForm(false);
+        } catch (error) {
+            setData((current) => ({ ...current, error: error.message }));
         } finally {
             setSavingProperty(false);
         }
     }
 
     async function handleStatusChange(propertyId, propertyStatus) {
-        if (data.isDemo) {
-            setData((current) => ({ ...current, properties: current.properties.map((property) => property.property_id === propertyId ? { ...property, property_status: propertyStatus } : property) }));
-            return;
+        try {
+            const updated = await updateProperty(propertyId, { property_status: propertyStatus });
+            setData((current) => ({ ...current, properties: current.properties.map((property) => property.property_id === propertyId ? updated : property), error: '' }));
+        } catch (error) {
+            setData((current) => ({ ...current, error: error.message }));
         }
-        const updated = await updateProperty(propertyId, { property_status: propertyStatus });
-        setData((current) => ({ ...current, properties: current.properties.map((property) => property.property_id === propertyId ? updated : property) }));
     }
 
     async function handleCreateTransaction(event) {
@@ -104,10 +104,12 @@ export default function Properties() {
             notes: transactionForm.notes || null,
         };
         try {
-            const transaction = data.isDemo ? { ...payload, transaction_id: Date.now(), created_at: new Date().toISOString() } : await createTransaction(payload);
-            setData((current) => ({ ...current, tx: { ...current.tx, [selectedPropertyId]: [transaction, ...(current.tx[selectedPropertyId] || [])] } }));
+            const transaction = await createTransaction(payload);
+            setData((current) => ({ ...current, tx: { ...current.tx, [selectedPropertyId]: [transaction, ...(current.tx[selectedPropertyId] || [])] }, error: '' }));
             setTransactionForm(emptyTransactionForm);
             setSelectedPropertyId(null);
+        } catch (error) {
+            setData((current) => ({ ...current, error: error.message }));
         } finally {
             setSavingTransaction(false);
         }
@@ -138,7 +140,7 @@ export default function Properties() {
                 </div>
             </div>
 
-            {data.isDemo && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Demo mode is active for this screen. {data.warning}</div>}
+            {data.error && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Unable to fully load or update inventory. {data.error}</div>}
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <StatCard label="Inventory" value={data.properties.length} />

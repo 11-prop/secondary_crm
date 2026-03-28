@@ -7,7 +7,7 @@ import { useAuth } from '../context/AuthContext';
 export default function Layout() {
     const [isSidebarOpen, setSidebarOpen] = useState(false);
     const location = useLocation();
-    const { logout, isDemoSession } = useAuth();
+    const { logout } = useAuth();
 
     const navigation = [
         { name: 'Dashboard', to: '/', icon: LayoutDashboard },
@@ -86,11 +86,6 @@ export default function Layout() {
                         </div>
 
                         <div className="flex items-center gap-3">
-                            {isDemoSession && (
-                                <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-black uppercase tracking-[0.2em] text-amber-700 ring-1 ring-amber-100">
-                                    Demo mode
-                                </span>
-                            )}
                             <span className="hidden rounded-full bg-gray-900 px-3 py-1 text-xs font-black uppercase tracking-[0.2em] text-white sm:inline-flex">
                                 Secured access
                             </span>

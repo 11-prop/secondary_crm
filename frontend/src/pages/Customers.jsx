@@ -5,7 +5,6 @@ import { Link } from 'react-router-dom';
 import { createCustomer, listAgents, listCustomers } from '../api/resources';
 import AddCustomerDrawer from '../components/AddCustomerDrawer';
 import Card from '../components/Card';
-import { demoAgents, demoCustomers } from '../data/demoData';
 import { formatCustomerInitials, formatCustomerName, getClientTypeClasses } from '../lib/formatters';
 
 export default function Customers() {
@@ -15,8 +14,7 @@ export default function Customers() {
     const [isLoading, setIsLoading] = useState(true);
     const [isCreating, setIsCreating] = useState(false);
     const [isDrawerOpen, setDrawerOpen] = useState(false);
-    const [isDemo, setIsDemo] = useState(false);
-    const [warning, setWarning] = useState('');
+    const [error, setError] = useState('');
 
     useEffect(() => {
         loadCustomers();
@@ -29,13 +27,11 @@ export default function Customers() {
             const [customersResponse, agentsResponse] = await Promise.all([listCustomers(), listAgents()]);
             setCustomers(customersResponse.items);
             setAgents(agentsResponse.items);
-            setIsDemo(false);
-            setWarning('');
+            setError('');
         } catch (error) {
-            setCustomers(demoCustomers);
-            setAgents(demoAgents);
-            setIsDemo(true);
-            setWarning(error.message);
+            setCustomers([]);
+            setAgents([]);
+            setError(error.message);
         } finally {
             setIsLoading(false);
         }
@@ -45,18 +41,9 @@ export default function Customers() {
         setIsCreating(true);
 
         try {
-            if (isDemo) {
-                const demoCustomer = {
-                    ...payload,
-                    customer_id: Date.now(),
-                    created_at: new Date().toISOString(),
-                };
-                setCustomers((current) => [demoCustomer, ...current]);
-                return { success: true };
-            }
-
             const newCustomer = await createCustomer(payload);
             setCustomers((current) => [newCustomer, ...current]);
+            setError('');
             return { success: true };
         } catch (error) {
             return { success: false, error: error.message };
@@ -102,11 +89,17 @@ export default function Customers() {
                     caption="Customers already assigned to a specialist."
                 />
                 <SummaryCard
-                    label="Data source"
-                    value={isDemo ? 'Demo fallback' : 'Live API'}
-                    caption={isDemo ? warning : 'Customer search and create actions are wired to the backend.'}
+                    label="Connection"
+                    value={error ? 'API issue' : 'Live API'}
+                    caption={error || 'Customer search and create actions are wired to the backend.'}
                 />
             </div>
+
+            {error && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+                    Unable to load customers. {error}
+                </div>
+            )}
 
             <Card
                 title="Active Clients"
