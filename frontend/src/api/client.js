@@ -11,11 +11,11 @@ function resolveBaseURL() {
             (!configuredBaseURL || configuredBaseURL === '/api');
 
         if (isDirectLocalPreview) {
-            return `${window.location.protocol}//${window.location.hostname}:8000/api`;
+            return `${window.location.protocol}//${window.location.hostname}:9000/api`;
         }
     }
 
-    return configuredBaseURL || 'http://localhost:8000/api';
+    return configuredBaseURL || 'http://localhost:9000/api';
 }
 
 const baseURL = resolveBaseURL();
