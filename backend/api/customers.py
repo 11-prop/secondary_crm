@@ -1,5 +1,5 @@
 # backend/api/customers.py
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -15,16 +15,39 @@ from models.user import User
 
 router = APIRouter()
 
+
+def validate_agent_assignments(db: Session, buyer_agent_id: int | None, seller_agent_id: int | None):
+    if buyer_agent_id:
+        buyer_agent = db.query(Agent).filter(Agent.agent_id == buyer_agent_id).first()
+        if not buyer_agent or buyer_agent.agent_type != "Buyer":
+            raise HTTPException(status_code=400, detail="Invalid Buyer Agent selected. Rule Violation.")
+
+    if seller_agent_id:
+        seller_agent = db.query(Agent).filter(Agent.agent_id == seller_agent_id).first()
+        if not seller_agent or seller_agent.agent_type != "Seller":
+            raise HTTPException(status_code=400, detail="Invalid Seller Agent selected. Rule Violation.")
+
 @router.get("/", response_model=APIPaginatedResponse[CustomerResponse])
 def get_customers(
-    skip: int = 0, 
-    limit: int = 100, 
+    skip: int = 0,
+    limit: int = 100,
+    q: str | None = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user) # Protects the route
 ):
     """Get a paginated list of all customers."""
-    total = db.query(Customer).count()
-    customers = db.query(Customer).offset(skip).limit(limit).all()
+    query = db.query(Customer)
+    if q:
+        term = f"%{q.strip()}%"
+        query = query.filter(
+            (Customer.first_name.ilike(term))
+            | (Customer.last_name.ilike(term))
+            | (Customer.email.ilike(term))
+            | (Customer.phone_number.ilike(term))
+        )
+
+    total = query.count()
+    customers = query.order_by(Customer.created_at.desc()).offset(skip).limit(limit).all()
     
     meta = PaginationMeta(
         total_records=total,
@@ -50,18 +73,13 @@ def create_customer(
     current_user: User = Depends(get_current_user)
 ):
     """Create a new customer and enforce Lead Protection Rules."""
-    
-    # --- LEAD PROTECTION ENFORCEMENT ---
-    if customer_in.assigned_buyer_agent_id:
-        buyer_agent = db.query(Agent).filter(Agent.agent_id == customer_in.assigned_buyer_agent_id).first()
-        if not buyer_agent or buyer_agent.agent_type != 'Buyer':
-            raise HTTPException(status_code=400, detail="Invalid Buyer Agent selected. Rule Violation.")
-            
-    if customer_in.assigned_seller_agent_id:
-        seller_agent = db.query(Agent).filter(Agent.agent_id == customer_in.assigned_seller_agent_id).first()
-        if not seller_agent or seller_agent.agent_type != 'Seller':
-            raise HTTPException(status_code=400, detail="Invalid Seller Agent selected. Rule Violation.")
-    
+
+    validate_agent_assignments(
+        db,
+        customer_in.assigned_buyer_agent_id,
+        customer_in.assigned_seller_agent_id,
+    )
+
     # Create the record
     new_customer = Customer(**customer_in.dict())
     db.add(new_customer)
@@ -94,4 +112,37 @@ def get_customer_360(
         status_code=200,
         message="Customer profile retrieved",
         data=customer
+    )
+
+
+@router.patch("/{customer_id}", response_model=APIResponse[CustomerResponse])
+def update_customer(
+    customer_id: int,
+    customer_in: CustomerUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    customer = db.query(Customer).filter(Customer.customer_id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    updates = customer_in.dict(exclude_unset=True)
+
+    validate_agent_assignments(
+        db,
+        updates.get("assigned_buyer_agent_id", customer.assigned_buyer_agent_id),
+        updates.get("assigned_seller_agent_id", customer.assigned_seller_agent_id),
+    )
+
+    for field, value in updates.items():
+        setattr(customer, field, value)
+
+    db.commit()
+    db.refresh(customer)
+
+    return APIResponse(
+        status="success",
+        status_code=200,
+        message="Customer updated successfully",
+        data=customer,
     )

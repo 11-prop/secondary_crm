@@ -1,7 +1,8 @@
 # backend/models/property.py
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import relationship
-from settings import Base
+
+from configs.settings import Base
 
 class Property(Base):
     __tablename__ = "properties"
@@ -20,6 +21,8 @@ class Property(Base):
     is_park_front = Column(Boolean, default=False)
     is_beach = Column(Boolean, default=False)
     is_market = Column(Boolean, default=False)
+    property_status = Column(String(50), default="Off-Market")
+    created_at = Column(DateTime, default=func.now())
 
     # Relationships
     owner = relationship("Customer", back_populates="properties")

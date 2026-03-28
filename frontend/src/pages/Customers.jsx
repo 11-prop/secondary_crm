@@ -1,114 +1,227 @@
-import { useState } from 'react';
-import { Search, Plus, ArrowRight, Users } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ArrowRight, Plus, RefreshCw, Search, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import Card from '../components/Card';
 
-const mockCustomers = [
-    { id: 1, firstName: 'John', lastName: 'Doe', email: 'john@example.com', phone: '555-0100', type: 'Both' },
-    { id: 2, firstName: 'Sarah', lastName: 'Smith', email: 'sarah@example.com', phone: '555-0200', type: 'Buyer' },
-    { id: 3, firstName: 'Michael', lastName: 'Chen', email: 'm.chen@example.com', phone: '555-0345', type: 'Seller' },
-];
+import { createCustomer, listAgents, listCustomers } from '../api/resources';
+import AddCustomerDrawer from '../components/AddCustomerDrawer';
+import Card from '../components/Card';
+import { demoAgents, demoCustomers } from '../data/demoData';
+import { formatCustomerInitials, formatCustomerName, getClientTypeClasses } from '../lib/formatters';
 
 export default function Customers() {
     const [searchTerm, setSearchTerm] = useState('');
+    const [customers, setCustomers] = useState([]);
+    const [agents, setAgents] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isCreating, setIsCreating] = useState(false);
+    const [isDrawerOpen, setDrawerOpen] = useState(false);
+    const [isDemo, setIsDemo] = useState(false);
+    const [warning, setWarning] = useState('');
 
-    const filteredCustomers = mockCustomers.filter(c =>
-        `${c.firstName} ${c.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.phone.includes(searchTerm)
-    );
+    useEffect(() => {
+        loadCustomers();
+    }, []);
+
+    async function loadCustomers() {
+        setIsLoading(true);
+
+        try {
+            const [customersResponse, agentsResponse] = await Promise.all([listCustomers(), listAgents()]);
+            setCustomers(customersResponse.items);
+            setAgents(agentsResponse.items);
+            setIsDemo(false);
+            setWarning('');
+        } catch (error) {
+            setCustomers(demoCustomers);
+            setAgents(demoAgents);
+            setIsDemo(true);
+            setWarning(error.message);
+        } finally {
+            setIsLoading(false);
+        }
+    }
+
+    async function handleCreateCustomer(payload) {
+        setIsCreating(true);
+
+        try {
+            if (isDemo) {
+                const demoCustomer = {
+                    ...payload,
+                    customer_id: Date.now(),
+                    created_at: new Date().toISOString(),
+                };
+                setCustomers((current) => [demoCustomer, ...current]);
+                return { success: true };
+            }
+
+            const newCustomer = await createCustomer(payload);
+            setCustomers((current) => [newCustomer, ...current]);
+            return { success: true };
+        } catch (error) {
+            return { success: false, error: error.message };
+        } finally {
+            setIsCreating(false);
+        }
+    }
+
+    const filteredCustomers = customers.filter((customer) => {
+        const searchValue = searchTerm.toLowerCase();
+        return (
+            formatCustomerName(customer).toLowerCase().includes(searchValue) ||
+            (customer.email || '').toLowerCase().includes(searchValue) ||
+            (customer.phone_number || '').toLowerCase().includes(searchValue)
+        );
+    });
 
     return (
         <div className="space-y-8">
-            {/* Page Header */}
             <div className="flex items-end justify-between">
                 <div>
-                    <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Customer Directory</h1>
-                    <p className="mt-2 text-lg text-gray-500">
-                        Manage lead protection and client profiles.
-                    </p>
+                    <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">Customer Directory</h1>
+                    <p className="mt-2 text-lg text-gray-500">Manage lead protection and client profiles.</p>
                 </div>
-                <button className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-all font-semibold shadow-md active:scale-95">
-                    <Plus className="w-5 h-5" />
+                <button
+                    onClick={() => setDrawerOpen(true)}
+                    className="flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-2.5 font-semibold text-white shadow-md transition-all active:scale-95 hover:bg-brand-700"
+                >
+                    <Plus className="h-5 w-5" />
                     Add Customer
                 </button>
             </div>
 
-            {/* Main Content Card */}
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <SummaryCard
+                    label="Directory size"
+                    value={customers.length}
+                    caption="Profiles currently loaded in this workspace."
+                />
+                <SummaryCard
+                    label="Protected leads"
+                    value={customers.filter((customer) => customer.assigned_buyer_agent_id || customer.assigned_seller_agent_id).length}
+                    caption="Customers already assigned to a specialist."
+                />
+                <SummaryCard
+                    label="Data source"
+                    value={isDemo ? 'Demo fallback' : 'Live API'}
+                    caption={isDemo ? warning : 'Customer search and create actions are wired to the backend.'}
+                />
+            </div>
+
             <Card
                 title="Active Clients"
                 subtitle="All leads currently assigned to the sales team."
                 actions={
-                    <div className="relative group w-72">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-brand-500 transition-colors" />
-                        <input
-                            type="text"
-                            className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 outline-none transition-all text-sm"
-                            placeholder="Search leads..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
+                    <div className="flex items-center gap-3">
+                        <button
+                            type="button"
+                            onClick={loadCustomers}
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 text-gray-500 transition-colors hover:bg-gray-50"
+                        >
+                            <RefreshCw className="h-4 w-4" />
+                        </button>
+                        <div className="relative group w-72">
+                            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 transition-colors group-focus-within:text-brand-500" />
+                            <input
+                                type="text"
+                                className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2 pl-10 pr-4 text-sm outline-none transition-all focus:border-brand-500 focus:bg-white focus:ring-4 focus:ring-brand-500/10"
+                                placeholder="Search leads..."
+                                value={searchTerm}
+                                onChange={(event) => setSearchTerm(event.target.value)}
+                            />
+                        </div>
                     </div>
                 }
             >
-                <table className="min-w-full divide-y divide-gray-100">
-                    <thead className="bg-gray-50/50">
-                        <tr>
-                            <th className="px-6 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-widest">Name</th>
-                            <th className="px-6 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-widest">Contact Info</th>
-                            <th className="px-6 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-widest">Type</th>
-                            <th className="px-6 py-4 text-right text-xs font-bold text-gray-400 uppercase tracking-widest">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-100">
-                        {filteredCustomers.map((customer) => (
-                            <tr key={customer.id} className="hover:bg-brand-50/30 transition-colors group">
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                    <div className="flex items-center">
-                                        <div className="h-10 w-10 shrink-0 rounded-full bg-brand-100 flex items-center justify-center ring-2 ring-white">
-                                            <span className="text-brand-600 font-bold text-sm">
-                                                {customer.firstName[0]}{customer.lastName?.[0]}
-                                            </span>
-                                        </div>
-                                        <div className="ml-4 font-semibold text-gray-900">
-                                            {customer.firstName} {customer.lastName}
-                                        </div>
-                                    </div>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                    <div className="text-gray-900 font-medium">{customer.email}</div>
-                                    <div className="text-gray-400 mt-0.5">{customer.phone}</div>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                    <span className={`inline-flex px-3 py-1 rounded-full text-xs font-bold tracking-wide
-                                        ${customer.type === 'Buyer' ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-100' :
-                                            customer.type === 'Seller' ? 'bg-purple-50 text-purple-700 ring-1 ring-purple-100' :
-                                                'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'}
-                                    `}>
-                                        {customer.type}
-                                    </span>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-bold">
-                                    <Link
-                                        to={`/customers/${customer.id}`}
-                                        className="text-brand-600 hover:text-brand-900 flex items-center justify-end gap-1 group-hover:translate-x-1 transition-transform"
-                                    >
-                                        View 360 <ArrowRight className="w-4 h-4" />
-                                    </Link>
-                                </td>
+                {isLoading ? (
+                    <div className="py-16 text-center text-sm font-medium text-gray-500">Loading customers...</div>
+                ) : (
+                    <table className="min-w-full divide-y divide-gray-100">
+                        <thead className="bg-gray-50/50">
+                            <tr>
+                                <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400">Name</th>
+                                <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400">Contact Info</th>
+                                <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400">Type</th>
+                                <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400">Assignments</th>
+                                <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-widest text-gray-400">Actions</th>
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 bg-white">
+                            {filteredCustomers.map((customer) => {
+                                const buyerAgent = agents.find((agent) => agent.agent_id === customer.assigned_buyer_agent_id);
+                                const sellerAgent = agents.find((agent) => agent.agent_id === customer.assigned_seller_agent_id);
 
-                {filteredCustomers.length === 0 && (
-                    <div className="text-center py-20 bg-gray-50/30">
+                                return (
+                                    <tr key={customer.customer_id} className="group transition-colors hover:bg-brand-50/30">
+                                        <td className="whitespace-nowrap px-6 py-4">
+                                            <div className="flex items-center">
+                                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-100 ring-2 ring-white">
+                                                    <span className="text-sm font-bold text-brand-600">
+                                                        {formatCustomerInitials(customer)}
+                                                    </span>
+                                                </div>
+                                                <div className="ml-4">
+                                                    <div className="font-semibold text-gray-900">{formatCustomerName(customer)}</div>
+                                                    <div className="text-xs font-medium text-gray-400">
+                                                        Added {new Date(customer.created_at).toLocaleDateString()}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="whitespace-nowrap px-6 py-4 text-sm">
+                                            <div className="font-medium text-gray-900">{customer.email || 'No email recorded'}</div>
+                                            <div className="mt-0.5 text-gray-400">{customer.phone_number || 'No phone recorded'}</div>
+                                        </td>
+                                        <td className="whitespace-nowrap px-6 py-4">
+                                            <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold tracking-wide ${getClientTypeClasses(customer.client_type)}`}>
+                                                {customer.client_type}
+                                            </span>
+                                        </td>
+                                        <td className="whitespace-nowrap px-6 py-4 text-sm">
+                                            <div className="font-semibold text-gray-900">{buyerAgent?.name || 'No buyer agent'}</div>
+                                            <div className="mt-0.5 text-gray-400">{sellerAgent?.name || 'No seller agent'}</div>
+                                        </td>
+                                        <td className="whitespace-nowrap px-6 py-4 text-right text-sm font-bold">
+                                            <Link
+                                                to={`/customers/${customer.customer_id}`}
+                                                className="flex items-center justify-end gap-1 text-brand-600 transition-transform group-hover:translate-x-1 hover:text-brand-900"
+                                            >
+                                                View 360 <ArrowRight className="h-4 w-4" />
+                                            </Link>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                )}
+
+                {!isLoading && filteredCustomers.length === 0 && (
+                    <div className="bg-gray-50/30 py-20 text-center">
                         <Users className="mx-auto h-12 w-12 text-gray-300" />
                         <h3 className="mt-4 text-lg font-semibold text-gray-900">No customers found</h3>
                         <p className="mt-2 text-gray-500">Try adjusting your search query.</p>
                     </div>
                 )}
             </Card>
+
+            <AddCustomerDrawer
+                isOpen={isDrawerOpen}
+                onClose={() => setDrawerOpen(false)}
+                agents={agents}
+                onSubmit={handleCreateCustomer}
+                isSubmitting={isCreating}
+            />
+        </div>
+    );
+}
+
+function SummaryCard({ label, value, caption }) {
+    return (
+        <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-100">
+            <p className="text-xs font-black uppercase tracking-[0.3em] text-brand-600">{label}</p>
+            <p className="mt-4 text-3xl font-black text-gray-900">{value}</p>
+            <p className="mt-1 text-sm font-medium text-gray-500">{caption}</p>
         </div>
     );
 }

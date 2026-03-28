@@ -1,6 +1,9 @@
 # backend/main.py
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from configs.settings import settings, engine, Base
 
 from api import auth, customers, properties, agents, projects, floor_plans, interaction_notes, transactions, uploads, import_data, users
@@ -36,6 +39,9 @@ app.include_router(transactions.router, prefix="/api/transactions", tags=["Trans
 app.include_router(uploads.router, prefix="/api/uploads", tags=["Uploads"])
 app.include_router(import_data.router, prefix="/api/import_data", tags=["Import Data"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
+
+os.makedirs(settings.UPLOAD_DIRECTORY, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIRECTORY), name="uploads")
 
 @app.get("/")
 def root():

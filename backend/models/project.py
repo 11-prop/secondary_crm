@@ -1,7 +1,8 @@
 # backend/models/project.py
 from sqlalchemy import Column, Integer, String, Text
 from sqlalchemy.orm import relationship
-from settings import Base
+
+from configs.settings import Base
 
 class Project(Base):
     __tablename__ = "projects"
@@ -9,7 +10,7 @@ class Project(Base):
     project_id = Column(Integer, primary_key=True, index=True)
     project_name = Column(String(150), nullable=False)
     neighborhood_name = Column(String(150))
-    layout_plan_url = Column(Text)
+    layout_plan_path = Column(Text)
 
     # Relationships
     floor_plans = relationship("FloorPlan", back_populates="project")

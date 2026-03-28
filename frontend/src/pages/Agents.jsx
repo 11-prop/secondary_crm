@@ -1,126 +1,110 @@
-import { useState } from 'react';
-import { UserCheck, ShieldAlert, Plus, Search, ExternalLink, Briefcase, TrendingUp } from 'lucide-react';
-import Card from '../components/Card';
+import { useEffect, useState } from 'react';
+import { BriefcaseBusiness, Plus, Search, ShieldCheck } from 'lucide-react';
 
-const mockAgents = [
-    { id: 1, name: "Alice Buyer", type: "Buyer", activeLeads: 42, performance: "+12%" },
-    { id: 2, name: "Charlie Seller", type: "Seller", activeLeads: 28, performance: "+5%" },
-    { id: 3, name: "Sarah Specialist", type: "Both", activeLeads: 55, performance: "+18%" },
-];
+import Card from '../components/Card';
+import { createAgent, listAgents, listCustomers } from '../api/resources';
+import { demoAgents, demoCustomers } from '../data/demoData';
+import { formatCustomerName, formatDateLabel, getAgentTypeClasses } from '../lib/formatters';
 
 export default function Agents() {
+    const [agents, setAgents] = useState([]);
+    const [customers, setCustomers] = useState([]);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [isDemo, setIsDemo] = useState(false);
+    const [warning, setWarning] = useState('');
+    const [isCreating, setIsCreating] = useState(false);
+    const [form, setForm] = useState({ name: '', agent_type: 'Buyer' });
+
+    useEffect(() => {
+        loadRoster();
+    }, []);
+
+    async function loadRoster() {
+        try {
+            const [agentsRes, customersRes] = await Promise.all([listAgents(), listCustomers()]);
+            setAgents(agentsRes.items);
+            setCustomers(customersRes.items);
+            setIsDemo(false);
+            setWarning('');
+        } catch (error) {
+            setAgents(demoAgents);
+            setCustomers(demoCustomers);
+            setIsDemo(true);
+            setWarning(error.message);
+        }
+    }
+
+    async function handleCreateAgent(event) {
+        event.preventDefault();
+        setIsCreating(true);
+        try {
+            const agent = isDemo ? { ...form, agent_id: Date.now(), is_active: true, created_at: new Date().toISOString() } : await createAgent(form);
+            setAgents((current) => [agent, ...current]);
+            setForm({ name: '', agent_type: 'Buyer' });
+        } finally {
+            setIsCreating(false);
+        }
+    }
+
+    const filteredAgents = agents.filter((agent) => agent.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    const protectedLeads = customers.filter((customer) => customer.assigned_buyer_agent_id || customer.assigned_seller_agent_id).length;
+
     return (
         <div className="space-y-8">
-            {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-                <div>
-                    <h1 className="text-3xl font-black tracking-tight text-brand-900 uppercase">Sales Force & Protection</h1>
-                    <p className="text-gray-500 font-medium mt-1 uppercase text-[10px] tracking-widest">Manage lead protection assignments and specialist roles.</p>
-                </div>
-                <button className="flex items-center gap-2 px-6 py-3 bg-gray-900 text-white rounded-xl font-bold text-sm shadow-xl hover:bg-gray-800 transition-all active:scale-95">
-                    <Plus className="w-4 h-4" /> Onboard New Agent
-                </button>
+            <div>
+                <h1 className="text-3xl font-black tracking-tight text-gray-900">Agent Roster</h1>
+                <p className="mt-1 text-gray-500">Onboard specialists and monitor how lead protection is distributed across the team.</p>
             </div>
 
-            {/* Specialty Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-blue-50 border border-blue-100 p-6 rounded-2xl shadow-sm">
-                    <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">Buyer Specialists</p>
-                    <p className="text-3xl font-black text-blue-900">12 Agents</p>
-                </div>
-                <div className="bg-purple-50 border border-purple-100 p-6 rounded-2xl shadow-sm">
-                    <p className="text-[10px] font-black text-purple-400 uppercase tracking-widest mb-1">Seller Specialists</p>
-                    <p className="text-3xl font-black text-purple-900">08 Agents</p>
-                </div>
-                <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-2xl shadow-sm">
-                    <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-1">Lead Protection Active</p>
-                    <p className="text-3xl font-black text-emerald-900">184 Clients</p>
-                </div>
+            {isDemo && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Demo mode is active for this screen. {warning}</div>}
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <StatCard label="Buyer Specialists" value={agents.filter((agent) => agent.agent_type === 'Buyer').length} />
+                <StatCard label="Seller Specialists" value={agents.filter((agent) => agent.agent_type === 'Seller').length} />
+                <StatCard label="Protected Leads" value={protectedLeads} />
             </div>
 
-            {/* Main Agent Table */}
-            <Card
-                title="Active Agent Directory"
-                subtitle="Review specialist types and current lead distribution."
-                actions={
-                    <div className="relative w-64 group">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-brand-500" />
-                        <input
-                            type="text"
-                            placeholder="Search agents..."
-                            className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-brand-500/10 transition-all"
-                        />
-                    </div>
-                }
-            >
+            <Card title="Onboard New Agent" subtitle="New specialists become immediately available in customer assignment dropdowns.">
+                <form className="grid grid-cols-1 gap-4 md:grid-cols-[1.2fr_0.8fr_auto]" onSubmit={handleCreateAgent}>
+                    <input type="text" required value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Agent name" className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                    <select value={form.agent_type} onChange={(event) => setForm((current) => ({ ...current, agent_type: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option>Buyer</option><option>Seller</option></select>
+                    <button type="submit" disabled={isCreating} className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-brand-500/20 hover:bg-brand-700 disabled:opacity-60"><Plus className="h-4 w-4" />{isCreating ? 'Adding...' : 'Add Agent'}</button>
+                </form>
+            </Card>
+
+            <Card title="Active Agent Directory" subtitle="Review specialist types and protected lead coverage." actions={<div className="relative w-72"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" /><input type="text" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search agents..." className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2 pl-10 pr-4 text-sm outline-none" /></div>}>
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
-                        <thead className="bg-gray-50 border-b border-gray-100 font-bold text-gray-400 uppercase tracking-widest text-[10px]">
+                        <thead className="bg-gray-50 border-b border-gray-100">
                             <tr>
-                                <th className="px-6 py-4">Agent Identity</th>
-                                <th className="px-6 py-4">Role [Specialty]</th>
-                                <th className="px-6 py-4 text-center">Protected Leads</th>
-                                <th className="px-6 py-4 text-center">Performance</th>
-                                <th className="px-6 py-4 text-right">Actions</th>
+                                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Agent</th>
+                                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Role</th>
+                                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Protected Leads</th>
+                                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Assigned Customers</th>
+                                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Created</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100">
-                            {mockAgents.map((agent) => (
-                                <tr key={agent.id} className="hover:bg-brand-50/20 transition-colors group">
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center gap-3">
-                                            <div className="h-10 w-10 bg-brand-100 rounded-xl flex items-center justify-center text-brand-700 font-black">
-                                                {agent.name.charAt(0)}
-                                            </div>
-                                            <div>
-                                                <p className="text-sm font-bold text-gray-900">{agent.name}</p>
-                                                <p className="text-[10px] text-gray-400">Joined Mar 2024</p>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ring-1 
-                      ${agent.type === 'Buyer' ? 'bg-blue-50 text-blue-700 ring-blue-100' :
-                                                agent.type === 'Seller' ? 'bg-purple-50 text-purple-700 ring-purple-100' :
-                                                    'bg-emerald-50 text-emerald-700 ring-emerald-100'}`}
-                                        >
-                                            {agent.type} Agent
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 text-center">
-                                        <div className="flex items-center justify-center gap-2">
-                                            <Briefcase className="w-3.5 h-3.5 text-gray-300" />
-                                            <span className="text-sm font-bold text-gray-700">{agent.activeLeads}</span>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 text-center">
-                                        <div className="flex items-center justify-center gap-1 text-emerald-600 font-bold text-xs">
-                                            <TrendingUp className="w-3 h-3" /> {agent.performance}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 text-right">
-                                        <button className="text-brand-600 font-bold text-xs hover:underline flex items-center justify-end gap-1 group-hover:translate-x-1 transition-transform">
-                                            Audit Assignments <ExternalLink className="w-3 h-3" />
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
+                        <tbody className="divide-y divide-gray-100 bg-white">
+                            {filteredAgents.map((agent) => {
+                                const assignments = customers.filter((customer) => customer.assigned_buyer_agent_id === agent.agent_id || customer.assigned_seller_agent_id === agent.agent_id);
+                                return (
+                                    <tr key={agent.agent_id} className="hover:bg-brand-50/20">
+                                        <td className="px-6 py-4"><div className="flex items-center gap-3"><div className="rounded-xl bg-brand-100 p-2 text-brand-700"><ShieldCheck className="h-5 w-5" /></div><div><p className="font-bold text-gray-900">{agent.name}</p><p className="text-xs font-medium text-gray-400">{agent.is_active ? 'Active' : 'Inactive'}</p></div></div></td>
+                                        <td className="px-6 py-4"><span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold tracking-wide ${getAgentTypeClasses(agent.agent_type)}`}>{agent.agent_type}</span></td>
+                                        <td className="px-6 py-4"><div className="inline-flex items-center gap-2 text-sm font-bold text-gray-800"><BriefcaseBusiness className="h-4 w-4 text-gray-300" /> {assignments.length}</div></td>
+                                        <td className="px-6 py-4 text-sm text-gray-500">{assignments.slice(0, 2).map((customer) => formatCustomerName(customer)).join(', ') || 'No protected leads yet'}{assignments.length > 2 ? ` +${assignments.length - 2} more` : ''}</td>
+                                        <td className="px-6 py-4 text-sm font-semibold text-gray-500">{formatDateLabel(agent.created_at)}</td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>
             </Card>
-
-            {/* Lead Protection Warning Zone */}
-            <div className="p-6 bg-amber-50 border border-amber-100 rounded-2xl flex items-start gap-4">
-                <ShieldAlert className="w-6 h-6 text-amber-500 mt-0.5" />
-                <div>
-                    <h4 className="text-sm font-black text-amber-900 uppercase tracking-tight">Lead Protection Integrity Check</h4>
-                    <p className="text-xs text-amber-800 font-medium mt-1 leading-relaxed">
-                        The system currently prevents assigning a Buyer Agent to a Seller-only lead profile.
-                        Analysts must manually override specialty constraints if an agent has switched roles.
-                    </p>
-                </div>
-            </div>
         </div>
     );
+}
+
+function StatCard({ label, value }) {
+    return <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-100"><p className="text-xs font-black uppercase tracking-[0.3em] text-brand-600">{label}</p><p className="mt-4 text-3xl font-black text-gray-900">{value}</p></div>;
 }

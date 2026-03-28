@@ -1,7 +1,8 @@
 # backend/models/floor_plan.py
-from sqlalchemy import Column, Integer, String, Numeric, Text, ForeignKey
+from sqlalchemy import Column, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import relationship
-from settings import Base
+
+from configs.settings import Base
 
 class FloorPlan(Base):
     __tablename__ = "floor_plans"
@@ -12,6 +13,7 @@ class FloorPlan(Base):
     number_of_rooms = Column(Integer)
     square_footage = Column(Numeric)
     amenities = Column(Text)
+    floor_plan_image_path = Column(Text)
 
     # Relationships
     project = relationship("Project", back_populates="floor_plans")

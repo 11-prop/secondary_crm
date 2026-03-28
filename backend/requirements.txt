@@ -1,4 +1,5 @@
 fastapi
+email-validator
 openpyxl
 pandas
 passlib[bcrypt]

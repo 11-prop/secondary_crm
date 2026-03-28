@@ -3,6 +3,8 @@ import os
 import shutil
 from uuid import uuid4
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+
+from configs.settings import settings
 from schemas.response import APIResponse
 from api.deps import get_current_user
 from models.user import User
@@ -10,7 +12,7 @@ from models.user import User
 router = APIRouter()
 
 # Define where files should go (matches our Docker volume)
-UPLOAD_DIRECTORY = "/app/uploads"
+UPLOAD_DIRECTORY = settings.UPLOAD_DIRECTORY
 
 # Ensure directories exist locally
 os.makedirs(f"{UPLOAD_DIRECTORY}/projects", exist_ok=True)
