@@ -12,6 +12,11 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str
 
+
+class UserPasswordUpdate(BaseModel):
+    current_password: str
+    new_password: str
+
 class UserResponse(UserBase):
     user_id: int
     created_at: datetime

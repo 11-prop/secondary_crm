@@ -160,3 +160,15 @@ export async function listUsers() {
 export async function createUser(payload) {
     return unwrapItem(await post("/users", payload));
 }
+
+export async function getCurrentUser() {
+    return unwrapItem(await get("/users/me"));
+}
+
+export async function updateMyPassword(payload) {
+    return unwrapItem(await patch("/users/me/password", payload));
+}
+
+export async function deactivateUser(userId) {
+    return unwrapItem(await patch(`/users/${userId}/deactivate`, {}));
+}

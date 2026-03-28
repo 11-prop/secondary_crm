@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, FileSpreadsheet, Loader2, Upload } from 'lucide-react';
+import { CheckCircle2, FileSpreadsheet, KeyRound, Loader2, ShieldCheck, Trash2, Upload } from 'lucide-react';
 
 import Card from '../components/Card';
 import {
     createFloorPlan,
     createProject,
     createUser,
+    deactivateUser,
+    getCurrentUser,
     importSpreadsheet,
     listFloorPlans,
     listProjects,
     listUsers,
+    updateMyPassword,
     uploadImage,
 } from '../api/resources';
 import { formatDateLabel } from '../lib/formatters';
@@ -17,29 +20,56 @@ import { formatDateLabel } from '../lib/formatters';
 const emptyProjectForm = { project_name: '', neighborhood_name: '', file: null };
 const emptyPlanForm = { project_id: '', plan_name: '', number_of_rooms: '', square_footage: '', amenities: '', file: null };
 const emptyUserForm = { full_name: '', email: '', password: '' };
+const emptyPasswordForm = { current_password: '', new_password: '', confirm_password: '' };
 
 export default function Settings() {
-    const [activeTab, setActiveTab] = useState('import');
-    const [data, setData] = useState({ projects: [], plans: [], users: [], error: '' });
+    const [activeTab, setActiveTab] = useState('account');
+    const [data, setData] = useState({ projects: [], plans: [], users: [], currentUser: null });
+    const [feedback, setFeedback] = useState({ error: '', success: '' });
     const [isUploading, setIsUploading] = useState(false);
     const [importResult, setImportResult] = useState(null);
     const [projectForm, setProjectForm] = useState(emptyProjectForm);
     const [planForm, setPlanForm] = useState(emptyPlanForm);
     const [userForm, setUserForm] = useState(emptyUserForm);
+    const [passwordForm, setPasswordForm] = useState(emptyPasswordForm);
     const [savingProject, setSavingProject] = useState(false);
     const [savingPlan, setSavingPlan] = useState(false);
     const [savingUser, setSavingUser] = useState(false);
+    const [savingPassword, setSavingPassword] = useState(false);
+    const [deactivatingUserId, setDeactivatingUserId] = useState(null);
 
     useEffect(() => {
         loadSettingsData();
     }, []);
 
+    function showError(message) {
+        setFeedback({ error: message, success: '' });
+    }
+
+    function showSuccess(message) {
+        setFeedback({ error: '', success: message });
+    }
+
     async function loadSettingsData() {
-        try {
-            const [projectsRes, plansRes, usersRes] = await Promise.all([listProjects(), listFloorPlans(), listUsers()]);
-            setData({ projects: projectsRes.items, plans: plansRes.items, users: usersRes.items, error: '' });
-        } catch (error) {
-            setData({ projects: [], plans: [], users: [], error: error.message });
+        const [projectsRes, plansRes, usersRes, currentUserRes] = await Promise.allSettled([
+            listProjects(),
+            listFloorPlans(),
+            listUsers(),
+            getCurrentUser(),
+        ]);
+
+        setData({
+            projects: projectsRes.status === 'fulfilled' ? projectsRes.value.items : [],
+            plans: plansRes.status === 'fulfilled' ? plansRes.value.items : [],
+            users: usersRes.status === 'fulfilled' ? usersRes.value.items : [],
+            currentUser: currentUserRes.status === 'fulfilled' ? currentUserRes.value : null,
+        });
+
+        const firstError = [projectsRes, plansRes, usersRes, currentUserRes].find((result) => result.status === 'rejected');
+        if (firstError?.status === 'rejected') {
+            showError(firstError.reason.message);
+        } else {
+            setFeedback({ error: '', success: '' });
         }
     }
 
@@ -50,9 +80,9 @@ export default function Settings() {
         try {
             const result = await importSpreadsheet(file);
             setImportResult(result);
-            setData((current) => ({ ...current, error: '' }));
+            showSuccess(`Import complete: ${result.customers_added} customers and ${result.properties_added} properties added.`);
         } catch (error) {
-            setData((current) => ({ ...current, error: error.message }));
+            showError(error.message);
         } finally {
             setIsUploading(false);
         }
@@ -65,10 +95,11 @@ export default function Settings() {
             const layout_plan_path = projectForm.file ? await uploadImage('projects', projectForm.file) : null;
             const payload = { project_name: projectForm.project_name, neighborhood_name: projectForm.neighborhood_name || null, layout_plan_path };
             const project = await createProject(payload);
-            setData((current) => ({ ...current, projects: [project, ...current.projects], error: '' }));
+            setData((current) => ({ ...current, projects: [project, ...current.projects] }));
             setProjectForm(emptyProjectForm);
+            showSuccess(`Project "${project.project_name}" created.`);
         } catch (error) {
-            setData((current) => ({ ...current, error: error.message }));
+            showError(error.message);
         } finally {
             setSavingProject(false);
         }
@@ -88,10 +119,11 @@ export default function Settings() {
                 floor_plan_image_path,
             };
             const plan = await createFloorPlan(payload);
-            setData((current) => ({ ...current, plans: [plan, ...current.plans], error: '' }));
+            setData((current) => ({ ...current, plans: [plan, ...current.plans] }));
             setPlanForm(emptyPlanForm);
+            showSuccess(`Floor plan "${plan.plan_name}" created.`);
         } catch (error) {
-            setData((current) => ({ ...current, error: error.message }));
+            showError(error.message);
         } finally {
             setSavingPlan(false);
         }
@@ -103,14 +135,65 @@ export default function Settings() {
         try {
             const payload = { ...userForm, is_admin: true, is_active: true };
             const user = await createUser(payload);
-            setData((current) => ({ ...current, users: [user, ...current.users], error: '' }));
+            setData((current) => ({ ...current, users: [user, ...current.users] }));
             setUserForm(emptyUserForm);
+            showSuccess(`Analyst "${user.full_name || user.email}" added.`);
         } catch (error) {
-            setData((current) => ({ ...current, error: error.message }));
+            showError(error.message);
         } finally {
             setSavingUser(false);
         }
     }
+
+    async function handleUpdatePassword(event) {
+        event.preventDefault();
+
+        if (passwordForm.new_password !== passwordForm.confirm_password) {
+            showError('New password and confirmation must match.');
+            return;
+        }
+
+        setSavingPassword(true);
+        try {
+            const user = await updateMyPassword({
+                current_password: passwordForm.current_password,
+                new_password: passwordForm.new_password,
+            });
+            setData((current) => ({ ...current, currentUser: user }));
+            setPasswordForm(emptyPasswordForm);
+            showSuccess('Your password was updated successfully.');
+        } catch (error) {
+            showError(error.message);
+        } finally {
+            setSavingPassword(false);
+        }
+    }
+
+    async function handleDeactivateUser(user) {
+        if (!user?.is_active) {
+            return;
+        }
+
+        if (!window.confirm(`Deactivate ${user.full_name || user.email}? They will no longer be able to sign in.`)) {
+            return;
+        }
+
+        setDeactivatingUserId(user.user_id);
+        try {
+            const updatedUser = await deactivateUser(user.user_id);
+            setData((current) => ({
+                ...current,
+                users: current.users.map((item) => (item.user_id === updatedUser.user_id ? updatedUser : item)),
+            }));
+            showSuccess(`"${updatedUser.full_name || updatedUser.email}" was deactivated.`);
+        } catch (error) {
+            showError(error.message);
+        } finally {
+            setDeactivatingUserId(null);
+        }
+    }
+
+    const isCurrentUserAdmin = !!data.currentUser?.is_admin;
 
     return (
         <div className="space-y-8">
@@ -119,13 +202,16 @@ export default function Settings() {
                 <p className="mt-1 text-gray-500">Configure imports, maintain visual assets, and manage analyst access.</p>
             </div>
 
-            {data.error && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Unable to fully load or update system settings. {data.error}</div>}
+            {feedback.error && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">{feedback.error}</div>}
+
+            {feedback.success && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">{feedback.success}</div>}
 
             <div className="flex gap-2 border-b border-gray-200">
                 {[
+                    ['account', 'My Account'],
+                    ['users', 'Analyst Accounts'],
                     ['import', 'Bulk Data Import'],
                     ['assets', 'Project Assets'],
-                    ['users', 'Analyst Accounts'],
                 ].map(([tab, label]) => (
                     <button
                         key={tab}
@@ -136,6 +222,50 @@ export default function Settings() {
                     </button>
                 ))}
             </div>
+
+            {activeTab === 'account' && (
+                <div className="grid grid-cols-1 gap-8 xl:grid-cols-[0.8fr_1.2fr]">
+                    <Card title="Signed-in Account" subtitle="Review your profile and current access status.">
+                        {!data.currentUser ? (
+                            <p className="text-sm font-medium text-gray-500">Unable to load the current user profile.</p>
+                        ) : (
+                            <div className="space-y-5">
+                                <div>
+                                    <p className="text-xs font-black uppercase tracking-[0.3em] text-brand-600">Analyst</p>
+                                    <h2 className="mt-2 text-2xl font-black text-gray-900">{data.currentUser.full_name || 'Unnamed user'}</h2>
+                                    <p className="mt-1 text-sm font-medium text-gray-500">{data.currentUser.email}</p>
+                                </div>
+
+                                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                    <InfoStat label="Status" value={data.currentUser.is_active ? 'Active' : 'Inactive'} />
+                                    <InfoStat label="Role" value={data.currentUser.is_admin ? 'Administrator' : 'Analyst'} />
+                                    <InfoStat label="Created" value={formatDateLabel(data.currentUser.created_at)} />
+                                    <InfoStat label="User ID" value={String(data.currentUser.user_id)} />
+                                </div>
+                            </div>
+                        )}
+                    </Card>
+
+                    <Card title="Change Password" subtitle="Update your own password without relying on another admin.">
+                        <form className="space-y-4" onSubmit={handleUpdatePassword} autoComplete="off">
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                <input type="password" required name="current-password" autoComplete="current-password" placeholder="Current password" value={passwordForm.current_password} onChange={(event) => setPasswordForm((current) => ({ ...current, current_password: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                                <input type="password" required name="new-password" autoComplete="new-password" placeholder="New password" value={passwordForm.new_password} onChange={(event) => setPasswordForm((current) => ({ ...current, new_password: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                                <input type="password" required name="confirm-new-password" autoComplete="new-password" placeholder="Confirm new password" value={passwordForm.confirm_password} onChange={(event) => setPasswordForm((current) => ({ ...current, confirm_password: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                            </div>
+
+                            <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 text-sm font-medium text-gray-600">
+                                Your current session stays active after the change. Future logins will use the new password.
+                            </div>
+
+                            <button type="submit" disabled={savingPassword || !data.currentUser} className="inline-flex items-center gap-2 rounded-xl bg-gray-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-60">
+                                <KeyRound className="h-4 w-4" />
+                                {savingPassword ? 'Updating password...' : 'Update Password'}
+                            </button>
+                        </form>
+                    </Card>
+                </div>
+            )}
 
             {activeTab === 'import' && (
                 <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1.2fr_0.8fr]">
@@ -202,21 +332,40 @@ export default function Settings() {
 
             {activeTab === 'users' && (
                 <Card title="System Users" subtitle="Manage the analysts who have access to this CRM.">
-                    <form className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_1fr_0.8fr_auto]" onSubmit={handleCreateUser}>
-                        <input type="text" required placeholder="Full Name" value={userForm.full_name} onChange={(event) => setUserForm((current) => ({ ...current, full_name: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
-                        <input type="email" required placeholder="Email Address" value={userForm.email} onChange={(event) => setUserForm((current) => ({ ...current, email: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
-                        <input type="password" required placeholder="Temporary Password" value={userForm.password} onChange={(event) => setUserForm((current) => ({ ...current, password: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
-                        <button type="submit" disabled={savingUser} className="rounded-xl bg-brand-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-brand-500/20 disabled:opacity-60">{savingUser ? 'Adding...' : 'Add Analyst'}</button>
-                    </form>
+                    {!isCurrentUserAdmin ? (
+                        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">
+                            Analyst account management requires an administrator account.
+                        </div>
+                    ) : (
+                        <>
+                            <form className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_1fr_0.8fr_auto]" onSubmit={handleCreateUser} autoComplete="off">
+                                <input type="text" required name="new-user-full-name" autoComplete="off" placeholder="Full Name" value={userForm.full_name} onChange={(event) => setUserForm((current) => ({ ...current, full_name: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                                <input type="email" required name="new-user-email" autoComplete="off" placeholder="Email Address" value={userForm.email} onChange={(event) => setUserForm((current) => ({ ...current, email: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                                <input type="password" required name="new-user-password" autoComplete="new-password" placeholder="Temporary Password" value={userForm.password} onChange={(event) => setUserForm((current) => ({ ...current, password: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                                <button type="submit" disabled={savingUser} className="rounded-xl bg-brand-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-brand-500/20 disabled:opacity-60">{savingUser ? 'Adding...' : 'Add Analyst'}</button>
+                            </form>
 
-                    <div className="mt-6 overflow-hidden rounded-2xl border border-gray-100">
-                        <table className="w-full text-left text-sm">
-                            <thead className="bg-gray-50 border-b border-gray-100"><tr><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Name</th><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Email</th><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Status</th><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Created</th></tr></thead>
-                            <tbody className="divide-y divide-gray-100 bg-white">{data.users.map((user) => <tr key={user.user_id}><td className="px-6 py-4 font-bold text-gray-900">{user.full_name || 'Unnamed user'}</td><td className="px-6 py-4 font-medium text-gray-500">{user.email}</td><td className="px-6 py-4"><span className={`rounded-md px-2 py-0.5 text-[10px] font-black uppercase ${user.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 text-gray-500'}`}>{user.is_active ? 'Active' : 'Inactive'}</span></td><td className="px-6 py-4 font-medium text-gray-500">{formatDateLabel(user.created_at)}</td></tr>)}</tbody>
-                        </table>
-                    </div>
+                            <div className="mt-6 overflow-hidden rounded-2xl border border-gray-100">
+                                <table className="w-full text-left text-sm">
+                                    <thead className="bg-gray-50 border-b border-gray-100"><tr><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Name</th><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Email</th><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Role</th><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Status</th><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Created</th><th className="px-6 py-3 text-right text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Actions</th></tr></thead>
+                                    <tbody className="divide-y divide-gray-100 bg-white">
+                                        {data.users.length === 0 ? (
+                                            <tr><td className="px-6 py-6 text-sm font-medium text-gray-500" colSpan={6}>No user accounts have been created yet.</td></tr>
+                                        ) : data.users.map((user) => {
+                                            const isCurrentUser = user.user_id === data.currentUser?.user_id;
+                                            return <tr key={user.user_id}><td className="px-6 py-4 font-bold text-gray-900">{user.full_name || 'Unnamed user'}</td><td className="px-6 py-4 font-medium text-gray-500">{user.email}</td><td className="px-6 py-4"><span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${user.is_admin ? 'bg-sky-50 text-sky-700 ring-1 ring-sky-100' : 'bg-slate-100 text-slate-700 ring-1 ring-slate-200'}`}><ShieldCheck className="h-3.5 w-3.5" />{user.is_admin ? 'Administrator' : 'Analyst'}</span></td><td className="px-6 py-4"><span className={`rounded-md px-2 py-0.5 text-[10px] font-black uppercase ${user.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 text-gray-500'}`}>{user.is_active ? 'Active' : 'Inactive'}</span></td><td className="px-6 py-4 font-medium text-gray-500">{formatDateLabel(user.created_at)}</td><td className="px-6 py-4 text-right">{isCurrentUser ? <span className="text-xs font-black uppercase tracking-[0.2em] text-gray-400">Current user</span> : user.is_active ? <button type="button" disabled={deactivatingUserId === user.user_id} onClick={() => handleDeactivateUser(user)} className="inline-flex items-center gap-2 rounded-xl border border-red-200 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50 disabled:opacity-60"><Trash2 className="h-3.5 w-3.5" />{deactivatingUserId === user.user_id ? 'Deactivating...' : 'Deactivate'}</button> : <span className="text-xs font-black uppercase tracking-[0.2em] text-gray-400">Soft deleted</span>}</td></tr>;
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </>
+                    )}
                 </Card>
             )}
         </div>
     );
+}
+
+function InfoStat({ label, value }) {
+    return <div className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3"><p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">{label}</p><p className="mt-2 text-sm font-bold text-gray-900">{value}</p></div>;
 }

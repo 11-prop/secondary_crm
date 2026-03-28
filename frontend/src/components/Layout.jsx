@@ -86,6 +86,14 @@ export default function Layout() {
                         </div>
 
                         <div className="flex items-center gap-3">
+                            <button
+                                type="button"
+                                onClick={logout}
+                                className="inline-flex items-center gap-2 rounded-xl border border-red-200 px-3 py-2 text-sm font-bold text-red-600 transition-colors hover:bg-red-50"
+                            >
+                                <LogOut className="h-4 w-4" />
+                                <span className="hidden sm:inline">Sign Out</span>
+                            </button>
                             <span className="hidden rounded-full bg-gray-900 px-3 py-1 text-xs font-black uppercase tracking-[0.2em] text-white sm:inline-flex">
                                 Secured access
                             </span>
