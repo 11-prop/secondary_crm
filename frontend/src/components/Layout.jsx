@@ -32,12 +32,11 @@ export default function Layout() {
             )}
 
             <aside
-                className={`fixed inset-y-0 left-0 z-30 flex w-64 transform flex-col border-r border-gray-200 bg-white transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 ${
-                    isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
-                }`}
+                className={`fixed inset-y-0 left-0 z-30 flex w-64 transform flex-col border-r border-gray-200 bg-white transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+                    }`}
             >
                 <div className="flex h-16 items-center border-b border-gray-200 px-6">
-                    <span className="text-xl font-bold tracking-tight text-brand-900">SecondaryCRM</span>
+                    <span className="text-xl font-bold tracking-tight text-brand-900">Secondary Offplan Properties CRM</span>
                 </div>
 
                 <nav className="flex-1 space-y-1 overflow-y-auto px-4 py-6">
