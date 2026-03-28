@@ -223,6 +223,8 @@ node_modules
 dist
 dist-ssr
 *.local
+backups/
+uploads/
 
 # Editor directories and files
 .vscode/*

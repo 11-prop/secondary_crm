@@ -105,7 +105,7 @@ CREATE TABLE transactions (
 
 -- Insert default Admin User (Password is 'admin' hashed with bcrypt for testing)
 INSERT INTO users (email, hashed_password, full_name, is_admin) VALUES
-('admin@crm.local', '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', 'System Admin', TRUE);
+('admin@crm.local', '$2b$12$Vy3zaYDGUKAd/nSIduxLuejIE6ntgPkK/f2QNFcPTiAlDkvhfVYVa', 'System Admin', TRUE);
 
 -- Insert Agents
 INSERT INTO agents (name, agent_type) VALUES
