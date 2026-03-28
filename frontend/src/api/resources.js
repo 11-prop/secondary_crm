@@ -73,7 +73,7 @@ export function resolveAssetUrl(path) {
 }
 
 export async function listCustomers(params = {}) {
-    return unwrapItems(await get("/customers", { params }));
+    return unwrapItems(await get("/customers/", { params }));
 }
 
 export async function getCustomer(customerId) {
@@ -81,7 +81,7 @@ export async function getCustomer(customerId) {
 }
 
 export async function createCustomer(payload) {
-    return unwrapItem(await post("/customers", payload));
+    return unwrapItem(await post("/customers/", payload));
 }
 
 export async function updateCustomer(customerId, payload) {
@@ -89,19 +89,19 @@ export async function updateCustomer(customerId, payload) {
 }
 
 export async function listAgents() {
-    return unwrapItems(await get("/agents"));
+    return unwrapItems(await get("/agents/"));
 }
 
 export async function createAgent(payload) {
-    return unwrapItem(await post("/agents", payload));
+    return unwrapItem(await post("/agents/", payload));
 }
 
 export async function listProperties(params = {}) {
-    return unwrapItems(await get("/properties", { params }));
+    return unwrapItems(await get("/properties/", { params }));
 }
 
 export async function createProperty(payload) {
-    return unwrapItem(await post("/properties", payload));
+    return unwrapItem(await post("/properties/", payload));
 }
 
 export async function updateProperty(propertyId, payload) {
@@ -109,19 +109,19 @@ export async function updateProperty(propertyId, payload) {
 }
 
 export async function listProjects() {
-    return unwrapItems(await get("/projects"));
+    return unwrapItems(await get("/projects/"));
 }
 
 export async function createProject(payload) {
-    return unwrapItem(await post("/projects", payload));
+    return unwrapItem(await post("/projects/", payload));
 }
 
 export async function listFloorPlans() {
-    return unwrapItems(await get("/floor_plans"));
+    return unwrapItems(await get("/floor_plans/"));
 }
 
 export async function createFloorPlan(payload) {
-    return unwrapItem(await post("/floor_plans", payload));
+    return unwrapItem(await post("/floor_plans/", payload));
 }
 
 export async function listNotesByCustomer(customerId) {
@@ -154,11 +154,11 @@ export async function importSpreadsheet(file) {
 }
 
 export async function listUsers() {
-    return unwrapItems(await get("/users"));
+    return unwrapItems(await get("/users/"));
 }
 
 export async function createUser(payload) {
-    return unwrapItem(await post("/users", payload));
+    return unwrapItem(await post("/users/", payload));
 }
 
 export async function getCurrentUser() {
