@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Building2, Plus, RefreshCw, Search } from 'lucide-react';
+import { Building2, Pencil, Plus, RefreshCw, Search, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import Card from '../components/Card';
@@ -24,6 +24,7 @@ export default function Properties() {
     const [statusFilter, setStatusFilter] = useState('All');
     const [showPropertyForm, setShowPropertyForm] = useState(false);
     const [propertyForm, setPropertyForm] = useState(emptyPropertyForm);
+    const [editingPropertyId, setEditingPropertyId] = useState(null);
     const [selectedPropertyId, setSelectedPropertyId] = useState(null);
     const [transactionForm, setTransactionForm] = useState(emptyTransactionForm);
     const [savingProperty, setSavingProperty] = useState(false);
@@ -56,7 +57,7 @@ export default function Properties() {
         }
     }
 
-    async function handleCreateProperty(event) {
+    async function handleSaveProperty(event) {
         event.preventDefault();
         setSavingProperty(true);
         const payload = {
@@ -73,15 +74,39 @@ export default function Properties() {
             is_market: propertyForm.is_market,
         };
         try {
-            const property = await createProperty(payload);
-            setData((current) => ({ ...current, properties: [property, ...current.properties], tx: { ...current.tx, [property.property_id]: [] }, error: '' }));
+            if (editingPropertyId) {
+                const property = await updateProperty(editingPropertyId, payload);
+                setData((current) => ({ ...current, properties: current.properties.map((item) => (item.property_id === property.property_id ? property : item)), error: '' }));
+            } else {
+                const property = await createProperty(payload);
+                setData((current) => ({ ...current, properties: [property, ...current.properties], tx: { ...current.tx, [property.property_id]: [] }, error: '' }));
+            }
             setPropertyForm(emptyPropertyForm);
             setShowPropertyForm(false);
+            setEditingPropertyId(null);
         } catch (error) {
             setData((current) => ({ ...current, error: error.message }));
         } finally {
             setSavingProperty(false);
         }
+    }
+
+    function startEditingProperty(property) {
+        setEditingPropertyId(property.property_id);
+        setPropertyForm({
+            villa_number: property.villa_number || '',
+            owner_customer_id: property.owner_customer_id ? String(property.owner_customer_id) : '',
+            project_id: property.project_id ? String(property.project_id) : '',
+            community_id: property.community_id ? String(property.community_id) : '',
+            plan_id: property.plan_id ? String(property.plan_id) : '',
+            property_status: property.property_status || 'Off-Market',
+            is_corner: !!property.is_corner,
+            is_lake_front: !!property.is_lake_front,
+            is_park_front: !!property.is_park_front,
+            is_beach: !!property.is_beach,
+            is_market: !!property.is_market,
+        });
+        setShowPropertyForm(true);
     }
 
     async function handleStatusChange(propertyId, propertyStatus) {
@@ -147,7 +172,7 @@ export default function Properties() {
                 </div>
                 <div className="flex gap-2">
                     <button type="button" onClick={loadInventory} className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-500 hover:bg-gray-50"><RefreshCw className="h-4 w-4" /></button>
-                    <button type="button" onClick={() => setShowPropertyForm((current) => !current)} className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-brand-500/20 hover:bg-brand-700"><Plus className="h-4 w-4" />{showPropertyForm ? 'Close form' : 'Add unit'}</button>
+                    <button type="button" onClick={() => { setShowPropertyForm((current) => { const next = !current; if (!next) { setEditingPropertyId(null); setPropertyForm(emptyPropertyForm); } return next; }); }} className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-brand-500/20 hover:bg-brand-700"><Plus className="h-4 w-4" />{showPropertyForm ? 'Close form' : 'Add unit'}</button>
                 </div>
             </div>
 
@@ -160,8 +185,8 @@ export default function Properties() {
             </div>
 
             {showPropertyForm && (
-                <Card title="Create property" subtitle="Add a unit and link it to an owner, project, and floor plan.">
-                    <form className="space-y-4" onSubmit={handleCreateProperty}>
+                <Card title={editingPropertyId ? 'Edit property' : 'Create property'} subtitle={editingPropertyId ? 'Correct the unit record, links, and status from the same form.' : 'Add a unit and link it to an owner, project, and floor plan.'}>
+                    <form className="space-y-4" onSubmit={handleSaveProperty}>
                         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                             <input type="text" required placeholder="Villa or unit number" value={propertyForm.villa_number} onChange={(event) => setPropertyForm((current) => ({ ...current, villa_number: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
                             <select value={propertyForm.owner_customer_id} onChange={(event) => setPropertyForm((current) => ({ ...current, owner_customer_id: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option value="">Select owner</option>{data.customers.map((customer) => <option key={customer.customer_id} value={customer.customer_id}>{formatCustomerName(customer)}</option>)}</select>
@@ -173,7 +198,10 @@ export default function Properties() {
                         <div className="grid grid-cols-2 gap-3 text-sm font-semibold text-gray-700 md:grid-cols-5">
                             {[['is_corner', 'Corner'], ['is_lake_front', 'Lake-front'], ['is_park_front', 'Park-front'], ['is_beach', 'Beachfront'], ['is_market', 'Market-facing']].map(([key, label]) => <label key={key} className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 p-3"><input type="checkbox" checked={propertyForm[key]} onChange={(event) => setPropertyForm((current) => ({ ...current, [key]: event.target.checked }))} /><span>{label}</span></label>)}
                         </div>
-                        <button type="submit" disabled={savingProperty} className="rounded-xl bg-gray-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-60">{savingProperty ? 'Creating property...' : 'Create property'}</button>
+                        <div className="flex items-center gap-3">
+                            <button type="submit" disabled={savingProperty} className="rounded-xl bg-gray-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-60">{savingProperty ? 'Saving property...' : editingPropertyId ? 'Save property' : 'Create property'}</button>
+                            {editingPropertyId && <button type="button" onClick={() => { setEditingPropertyId(null); setPropertyForm(emptyPropertyForm); setShowPropertyForm(false); }} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-bold text-gray-600"><X className="h-4 w-4" />Cancel</button>}
+                        </div>
                     </form>
                 </Card>
             )}
@@ -189,7 +217,7 @@ export default function Properties() {
                                     const project = data.projects.find((item) => item.project_id === property.project_id);
                                     const community = getProjectCommunities(data.projects, property.project_id).find((item) => item.community_id === property.community_id);
                                     const transactions = data.tx[property.property_id] || [];
-                                    return <tr key={property.property_id} className="hover:bg-brand-50/20"><td className="px-6 py-4"><div className="flex items-center gap-3"><div className="rounded-xl bg-brand-50 p-2 text-brand-600"><Building2 className="h-5 w-5" /></div><div><p className="font-bold text-gray-900">{property.villa_number}</p><p className="text-xs font-medium text-gray-400">Added {formatDateLabel(property.created_at)}</p></div></div></td><td className="px-6 py-4"><Link to={customer ? `/customers/${customer.customer_id}` : '#'} className="text-sm font-bold text-gray-900 hover:text-brand-600">{customer ? formatCustomerName(customer) : 'Unassigned owner'}</Link></td><td className="px-6 py-4 text-sm font-semibold text-gray-600">{project?.project_name || 'Unassigned project'}<p className="mt-1 text-xs font-medium text-gray-400">{community?.community_name || 'All communities'}</p></td><td className="px-6 py-4"><select value={property.property_status} onChange={(event) => handleStatusChange(property.property_id, event.target.value)} className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-bold outline-none"><option>Off-Market</option><option>Primary Residence</option><option>Active Listing</option><option>Rented</option></select></td><td className="px-6 py-4 text-sm text-gray-500">{getPropertyAttributeTags(property).join(', ') || 'No special attributes'}</td><td className="px-6 py-4 text-right"><button type="button" onClick={() => setSelectedPropertyId(property.property_id)} className="text-sm font-bold text-brand-600 hover:text-brand-800">Add transaction ({transactions.length})</button></td></tr>;
+                                    return <tr key={property.property_id} className="hover:bg-brand-50/20"><td className="px-6 py-4"><div className="flex items-center gap-3"><div className="rounded-xl bg-brand-50 p-2 text-brand-600"><Building2 className="h-5 w-5" /></div><div><p className="font-bold text-gray-900">{property.villa_number}</p><p className="text-xs font-medium text-gray-400">Added {formatDateLabel(property.created_at)}</p></div></div></td><td className="px-6 py-4"><Link to={customer ? `/customers/${customer.customer_id}` : '#'} className="text-sm font-bold text-gray-900 hover:text-brand-600">{customer ? formatCustomerName(customer) : 'Unassigned owner'}</Link></td><td className="px-6 py-4 text-sm font-semibold text-gray-600">{project?.project_name || 'Unassigned project'}<p className="mt-1 text-xs font-medium text-gray-400">{community?.community_name || 'All communities'}</p></td><td className="px-6 py-4"><select value={property.property_status} onChange={(event) => handleStatusChange(property.property_id, event.target.value)} className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-bold outline-none"><option>Off-Market</option><option>Primary Residence</option><option>Active Listing</option><option>Rented</option></select></td><td className="px-6 py-4 text-sm text-gray-500">{getPropertyAttributeTags(property).join(', ') || 'No special attributes'}</td><td className="px-6 py-4 text-right"><div className="flex items-center justify-end gap-4"><button type="button" onClick={() => startEditingProperty(property)} className="inline-flex items-center gap-1 text-sm font-bold text-gray-500 hover:text-brand-700"><Pencil className="h-4 w-4" />Edit</button><button type="button" onClick={() => setSelectedPropertyId(property.property_id)} className="text-sm font-bold text-brand-600 hover:text-brand-800">Add transaction ({transactions.length})</button></div></td></tr>;
                                 })}
                             </tbody>
                         </table>

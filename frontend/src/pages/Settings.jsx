@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { CheckCircle2, FileSpreadsheet, KeyRound, Loader2, MapPinned, ShieldCheck, Trash2, Upload } from 'lucide-react';
+﻿import { useEffect, useState } from 'react';
+import { CheckCircle2, FileSpreadsheet, KeyRound, Loader2, MapPinned, Pencil, ShieldCheck, Trash2, Upload, X } from 'lucide-react';
 
 import Card from '../components/Card';
 import {
@@ -13,14 +13,18 @@ import {
     listFloorPlans,
     listProjects,
     listUsers,
+    updateCommunity,
+    updateFloorPlan,
     updateMyPassword,
+    updateProject,
+    updateUser,
     uploadImage,
 } from '../api/resources';
 import { formatDateLabel } from '../lib/formatters';
 
 const emptyProjectForm = { project_name: '' };
-const emptyCommunityForm = { project_id: '', community_name: '', file: null };
-const emptyPlanForm = { project_id: '', community_id: '', plan_name: '', number_of_rooms: '', square_footage: '', amenities: '', file: null };
+const emptyCommunityForm = { project_id: '', community_name: '', file: null, existing_layout_plan_path: null };
+const emptyPlanForm = { project_id: '', community_id: '', plan_name: '', number_of_rooms: '', square_footage: '', amenities: '', file: null, existing_floor_plan_image_path: null };
 const emptyUserForm = { full_name: '', email: '', password: '' };
 const emptyPasswordForm = { current_password: '', new_password: '', confirm_password: '' };
 
@@ -41,6 +45,10 @@ export default function Settings() {
     const [savingUser, setSavingUser] = useState(false);
     const [savingPassword, setSavingPassword] = useState(false);
     const [deactivatingUserId, setDeactivatingUserId] = useState(null);
+    const [editingProjectId, setEditingProjectId] = useState(null);
+    const [editingCommunity, setEditingCommunity] = useState(null);
+    const [editingPlanId, setEditingPlanId] = useState(null);
+    const [editingUserId, setEditingUserId] = useState(null);
 
     useEffect(() => {
         loadSettingsData();
@@ -92,18 +100,26 @@ export default function Settings() {
         }
     }
 
-    async function handleCreateProject(event) {
+    async function handleSaveProject(event) {
         event.preventDefault();
         setSavingProject(true);
         try {
             const payload = { project_name: projectForm.project_name };
-            const project = await createProject(payload);
-            const hydratedProject = { ...project, communities: project.communities || [] };
-            setData((current) => ({ ...current, projects: [hydratedProject, ...current.projects] }));
+            if (editingProjectId) {
+                const project = await updateProject(editingProjectId, payload);
+                const hydratedProject = { ...project, communities: project.communities || data.projects.find((item) => item.project_id === project.project_id)?.communities || [] };
+                setData((current) => ({ ...current, projects: current.projects.map((item) => (item.project_id === hydratedProject.project_id ? hydratedProject : item)) }));
+                showSuccess(`Project "${project.project_name}" updated.`);
+            } else {
+                const project = await createProject(payload);
+                const hydratedProject = { ...project, communities: project.communities || [] };
+                setData((current) => ({ ...current, projects: [hydratedProject, ...current.projects] }));
+                setCommunityForm((current) => ({ ...current, project_id: String(project.project_id) }));
+                setPlanForm((current) => ({ ...current, project_id: String(project.project_id), community_id: '' }));
+                showSuccess(`Project "${project.project_name}" created. You can now add one or more communities under it.`);
+            }
             setProjectForm(emptyProjectForm);
-            setCommunityForm((current) => ({ ...current, project_id: String(project.project_id) }));
-            setPlanForm((current) => ({ ...current, project_id: String(project.project_id), community_id: '' }));
-            showSuccess(`Project "${project.project_name}" created. You can now add one or more communities under it.`);
+            setEditingProjectId(null);
         } catch (error) {
             showError(error.message);
         } finally {
@@ -111,23 +127,40 @@ export default function Settings() {
         }
     }
 
-    async function handleCreateCommunity(event) {
+    async function handleSaveCommunity(event) {
         event.preventDefault();
         setSavingCommunity(true);
         try {
-            const layout_plan_path = communityForm.file ? await uploadImage('projects', communityForm.file) : null;
-            const community = await createCommunity(Number(communityForm.project_id), { community_name: communityForm.community_name, layout_plan_path });
-            setData((current) => ({
-                ...current,
-                projects: current.projects.map((project) => (
-                    project.project_id === community.project_id
-                        ? { ...project, communities: [...(project.communities || []), community].sort((left, right) => left.community_name.localeCompare(right.community_name)) }
-                        : project
-                )),
-            }));
-            setCommunityForm((current) => ({ ...current, community_name: '', file: null }));
-            setPlanForm((current) => current.project_id === communityForm.project_id ? { ...current, community_id: String(community.community_id) } : current);
-            showSuccess(`Community "${community.community_name}" added.`);
+            const layout_plan_path = communityForm.file ? await uploadImage('projects', communityForm.file) : communityForm.existing_layout_plan_path;
+            if (editingCommunity) {
+                const community = await updateCommunity(editingCommunity.project_id, editingCommunity.community_id, { community_name: communityForm.community_name, layout_plan_path });
+                setData((current) => ({
+                    ...current,
+                    projects: current.projects.map((project) => (
+                        project.project_id === editingCommunity.project_id
+                            ? {
+                                ...project,
+                                communities: (project.communities || []).map((item) => (item.community_id === community.community_id ? community : item)).sort((left, right) => left.community_name.localeCompare(right.community_name)),
+                            }
+                            : project
+                    )),
+                }));
+                showSuccess(`Community "${community.community_name}" updated.`);
+            } else {
+                const community = await createCommunity(Number(communityForm.project_id), { community_name: communityForm.community_name, layout_plan_path });
+                setData((current) => ({
+                    ...current,
+                    projects: current.projects.map((project) => (
+                        project.project_id === community.project_id
+                            ? { ...project, communities: [...(project.communities || []), community].sort((left, right) => left.community_name.localeCompare(right.community_name)) }
+                            : project
+                    )),
+                }));
+                setPlanForm((current) => current.project_id === communityForm.project_id ? { ...current, community_id: String(community.community_id) } : current);
+                showSuccess(`Community "${community.community_name}" added.`);
+            }
+            setCommunityForm(emptyCommunityForm);
+            setEditingCommunity(null);
         } catch (error) {
             showError(error.message);
         } finally {
@@ -135,11 +168,11 @@ export default function Settings() {
         }
     }
 
-    async function handleCreatePlan(event) {
+    async function handleSavePlan(event) {
         event.preventDefault();
         setSavingPlan(true);
         try {
-            const floor_plan_image_path = planForm.file ? await uploadImage('plans', planForm.file) : null;
+            const floor_plan_image_path = planForm.file ? await uploadImage('plans', planForm.file) : planForm.existing_floor_plan_image_path;
             const payload = {
                 project_id: Number(planForm.project_id),
                 community_id: planForm.community_id ? Number(planForm.community_id) : null,
@@ -149,10 +182,17 @@ export default function Settings() {
                 amenities: planForm.amenities || null,
                 floor_plan_image_path,
             };
-            const plan = await createFloorPlan(payload);
-            setData((current) => ({ ...current, plans: [plan, ...current.plans] }));
+            if (editingPlanId) {
+                const plan = await updateFloorPlan(editingPlanId, payload);
+                setData((current) => ({ ...current, plans: current.plans.map((item) => (item.plan_id === plan.plan_id ? plan : item)) }));
+                showSuccess(`Floor plan "${plan.plan_name}" updated.`);
+            } else {
+                const plan = await createFloorPlan(payload);
+                setData((current) => ({ ...current, plans: [plan, ...current.plans] }));
+                showSuccess(`Floor plan "${plan.plan_name}" created.`);
+            }
             setPlanForm(emptyPlanForm);
-            showSuccess(`Floor plan "${plan.plan_name}" created.`);
+            setEditingPlanId(null);
         } catch (error) {
             showError(error.message);
         } finally {
@@ -160,15 +200,64 @@ export default function Settings() {
         }
     }
 
-    async function handleCreateUser(event) {
+    function startEditingProject(project) {
+        setEditingProjectId(project.project_id);
+        setProjectForm({ project_name: project.project_name || '' });
+    }
+
+    function startEditingCommunity(projectId, community) {
+        setEditingCommunity({ project_id: projectId, community_id: community.community_id });
+        setCommunityForm({
+            project_id: String(projectId),
+            community_name: community.community_name || '',
+            file: null,
+            existing_layout_plan_path: community.layout_plan_path || null,
+        });
+    }
+
+    function startEditingPlan(plan) {
+        setEditingPlanId(plan.plan_id);
+        setPlanForm({
+            project_id: String(plan.project_id || ''),
+            community_id: plan.community_id ? String(plan.community_id) : '',
+            plan_name: plan.plan_name || '',
+            number_of_rooms: plan.number_of_rooms ?? '',
+            square_footage: plan.square_footage ?? '',
+            amenities: plan.amenities || '',
+            file: null,
+            existing_floor_plan_image_path: plan.floor_plan_image_path || null,
+        });
+    }
+
+    async function handleSaveUser(event) {
         event.preventDefault();
         setSavingUser(true);
         try {
-            const payload = { ...userForm, is_admin: true, is_active: true };
-            const user = await createUser(payload);
-            setData((current) => ({ ...current, users: [user, ...current.users] }));
+            if (editingUserId) {
+                const payload = {
+                    full_name: userForm.full_name,
+                    email: userForm.email,
+                    is_admin: true,
+                    is_active: true,
+                };
+                if (userForm.password) {
+                    payload.password = userForm.password;
+                }
+                const user = await updateUser(editingUserId, payload);
+                setData((current) => ({
+                    ...current,
+                    users: current.users.map((item) => (item.user_id === user.user_id ? user : item)),
+                    currentUser: current.currentUser?.user_id === user.user_id ? user : current.currentUser,
+                }));
+                showSuccess(`Analyst "${user.full_name || user.email}" updated.`);
+            } else {
+                const payload = { ...userForm, is_admin: true, is_active: true };
+                const user = await createUser(payload);
+                setData((current) => ({ ...current, users: [user, ...current.users] }));
+                showSuccess(`Analyst "${user.full_name || user.email}" added.`);
+            }
             setUserForm(emptyUserForm);
-            showSuccess(`Analyst "${user.full_name || user.email}" added.`);
+            setEditingUserId(null);
         } catch (error) {
             showError(error.message);
         } finally {
@@ -222,6 +311,15 @@ export default function Settings() {
         } finally {
             setDeactivatingUserId(null);
         }
+    }
+
+    function startEditingUser(user) {
+        setEditingUserId(user.user_id);
+        setUserForm({
+            full_name: user.full_name || '',
+            email: user.email || '',
+            password: '',
+        });
     }
 
     const isCurrentUserAdmin = !!data.currentUser?.is_admin;
@@ -329,25 +427,31 @@ export default function Settings() {
 
             {activeTab === 'assets' && (
                 <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 xl:grid-cols-3">
-                    <Card title="Add New Project" subtitle="Create the top-level development that will contain multiple communities.">
-                        <form className="space-y-4" onSubmit={handleCreateProject}>
+                    <Card title={editingProjectId ? 'Edit Project' : 'Add New Project'} subtitle={editingProjectId ? 'Rename the project if it was created with incomplete details.' : 'Create the top-level development that will contain multiple communities.'}>
+                        <form className="space-y-4" onSubmit={handleSaveProject}>
                             <input type="text" required placeholder="Project Name" value={projectForm.project_name} onChange={(event) => setProjectForm((current) => ({ ...current, project_name: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
-                            <button type="submit" disabled={savingProject} className="w-full rounded-xl bg-gray-900 py-3 text-sm font-bold text-white shadow-xl disabled:opacity-60">{savingProject ? 'Creating project...' : 'Create Project'}</button>
+                            <div className="flex items-center gap-3">
+                                <button type="submit" disabled={savingProject} className="flex-1 rounded-xl bg-gray-900 py-3 text-sm font-bold text-white shadow-xl disabled:opacity-60">{savingProject ? 'Saving project...' : editingProjectId ? 'Save Project' : 'Create Project'}</button>
+                                {editingProjectId && <button type="button" onClick={() => { setEditingProjectId(null); setProjectForm(emptyProjectForm); }} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-bold text-gray-600"><X className="h-4 w-4" />Cancel</button>}
+                            </div>
                         </form>
                     </Card>
 
-                    <Card title="Add Community" subtitle="A single project can own multiple communities or clusters, each with its own layout asset.">
-                        <form className="space-y-4" onSubmit={handleCreateCommunity}>
-                            <select required value={communityForm.project_id} onChange={(event) => setCommunityForm((current) => ({ ...current, project_id: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option value="">Select Project...</option>{data.projects.map((project) => <option key={project.project_id} value={project.project_id}>{project.project_name}</option>)}</select>
+                    <Card title={editingCommunity ? 'Edit Community' : 'Add Community'} subtitle={editingCommunity ? 'Update the community name or replace its layout asset.' : 'A single project can own multiple communities or clusters, each with its own layout asset.'}>
+                        <form className="space-y-4" onSubmit={handleSaveCommunity}>
+                            <select required value={communityForm.project_id} onChange={(event) => setCommunityForm((current) => ({ ...current, project_id: event.target.value }))} disabled={!!editingCommunity} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none disabled:opacity-50"><option value="">Select Project...</option>{data.projects.map((project) => <option key={project.project_id} value={project.project_id}>{project.project_name}</option>)}</select>
                             <input type="text" required placeholder="Community Name" value={communityForm.community_name} onChange={(event) => setCommunityForm((current) => ({ ...current, community_name: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
                             <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-gray-200 p-4 text-sm font-semibold text-gray-600"><Upload className="h-4 w-4 text-brand-600" />Upload community layout asset (image or PDF, up to 20 MB)<input type="file" accept="image/*,.pdf,application/pdf" className="hidden" onChange={(event) => setCommunityForm((current) => ({ ...current, file: event.target.files?.[0] || null }))} /></label>
-                            <button type="submit" disabled={savingCommunity || data.projects.length === 0} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-3 text-sm font-bold text-white shadow-lg shadow-brand-500/20 disabled:opacity-60"><MapPinned className="h-4 w-4" />{savingCommunity ? 'Adding community...' : 'Add Community'}</button>
+                            <div className="flex items-center gap-3">
+                                <button type="submit" disabled={savingCommunity || data.projects.length === 0} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand-600 py-3 text-sm font-bold text-white shadow-lg shadow-brand-500/20 disabled:opacity-60"><MapPinned className="h-4 w-4" />{savingCommunity ? 'Saving community...' : editingCommunity ? 'Save Community' : 'Add Community'}</button>
+                                {editingCommunity && <button type="button" onClick={() => { setEditingCommunity(null); setCommunityForm(emptyCommunityForm); }} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-bold text-gray-600"><X className="h-4 w-4" />Cancel</button>}
+                            </div>
                             {data.projects.length === 0 && <p className="text-sm font-medium text-gray-500">Create a project first, then add its communities here.</p>}
                         </form>
                     </Card>
 
-                    <Card title="Add Floor Plan" subtitle="Attach a plan to a whole project or narrow it to one community.">
-                        <form className="space-y-4" onSubmit={handleCreatePlan}>
+                    <Card title={editingPlanId ? 'Edit Floor Plan' : 'Add Floor Plan'} subtitle={editingPlanId ? 'Finish or correct the plan details without creating a duplicate record.' : 'Attach a plan to a whole project or narrow it to one community.'}>
+                        <form className="space-y-4" onSubmit={handleSavePlan}>
                             <select required value={planForm.project_id} onChange={(event) => setPlanForm((current) => ({ ...current, project_id: event.target.value, community_id: '' }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option value="">Select Project...</option>{data.projects.map((project) => <option key={project.project_id} value={project.project_id}>{project.project_name}</option>)}</select>
                             <select value={planForm.community_id} onChange={(event) => setPlanForm((current) => ({ ...current, community_id: event.target.value }))} disabled={!planForm.project_id} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none disabled:opacity-50"><option value="">All communities in this project</option>{availablePlanCommunities.map((community) => <option key={community.community_id} value={community.community_id}>{community.community_name}</option>)}</select>
                             <input type="text" required placeholder="Plan Name" value={planForm.plan_name} onChange={(event) => setPlanForm((current) => ({ ...current, plan_name: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
@@ -357,20 +461,96 @@ export default function Settings() {
                             </div>
                             <textarea rows={3} placeholder="Amenities" value={planForm.amenities} onChange={(event) => setPlanForm((current) => ({ ...current, amenities: event.target.value }))} className="w-full rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm outline-none" />
                             <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-gray-200 p-4 text-sm font-semibold text-gray-600"><Upload className="h-4 w-4 text-brand-600" />Upload floor plan asset (image or PDF, up to 20 MB)<input type="file" accept="image/*,.pdf,application/pdf" className="hidden" onChange={(event) => setPlanForm((current) => ({ ...current, file: event.target.files?.[0] || null }))} /></label>
-                            <button type="submit" disabled={savingPlan} className="w-full rounded-xl bg-gray-900 py-3 text-sm font-bold text-white shadow-xl disabled:opacity-60">{savingPlan ? 'Creating floor plan...' : 'Create Floor Plan'}</button>
+                            <div className="flex items-center gap-3">
+                                <button type="submit" disabled={savingPlan} className="flex-1 rounded-xl bg-gray-900 py-3 text-sm font-bold text-white shadow-xl disabled:opacity-60">{savingPlan ? 'Saving floor plan...' : editingPlanId ? 'Save Floor Plan' : 'Create Floor Plan'}</button>
+                                {editingPlanId && <button type="button" onClick={() => { setEditingPlanId(null); setPlanForm(emptyPlanForm); }} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-bold text-gray-600"><X className="h-4 w-4" />Cancel</button>}
+                            </div>
                         </form>
                     </Card>
 
-                    <Card title="Projects" subtitle="Each project can now hold multiple communities.">
-                        <div className="space-y-3">{data.projects.length === 0 ? <p className="text-sm font-medium text-gray-500">No projects have been created yet.</p> : data.projects.map((project) => <div key={project.project_id} className="rounded-2xl border border-gray-100 bg-gray-50 p-4"><p className="font-bold text-gray-900">{project.project_name}</p><p className="mt-1 text-sm text-gray-500">{(project.communities || []).length} communities linked</p><div className="mt-3 space-y-2">{(project.communities || []).length === 0 ? <span className="inline-flex rounded-full bg-white px-3 py-1 text-xs font-bold text-gray-400 ring-1 ring-gray-200">No communities yet</span> : (project.communities || []).map((community) => <div key={community.community_id} className="flex items-center justify-between rounded-xl bg-white px-3 py-2 ring-1 ring-gray-200"><span className="text-sm font-bold text-gray-800">{community.community_name}</span><span className={`text-xs font-bold ${community.layout_plan_path ? 'text-emerald-600' : 'text-gray-400'}`}>{community.layout_plan_path ? 'Layout uploaded' : 'No layout yet'}</span></div>)}</div></div>)}</div>
+                    <Card title="Projects" subtitle="Each project can now hold multiple communities, and every record can be reopened for edits.">
+                        <div className="space-y-3">
+                            {data.projects.length === 0 ? (
+                                <p className="text-sm font-medium text-gray-500">No projects have been created yet.</p>
+                            ) : data.projects.map((project) => (
+                                <div key={project.project_id} className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
+                                    <div className="flex items-start justify-between gap-4">
+                                        <div>
+                                            <p className="font-bold text-gray-900">{project.project_name}</p>
+                                            <p className="mt-1 text-sm text-gray-500">{(project.communities || []).length} communities linked</p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => startEditingProject(project)}
+                                            className="inline-flex items-center gap-1 text-sm font-bold text-brand-600 hover:text-brand-800"
+                                        >
+                                            <Pencil className="h-4 w-4" />
+                                            Edit
+                                        </button>
+                                    </div>
+
+                                    <div className="mt-3 space-y-2">
+                                        {(project.communities || []).length === 0 ? (
+                                            <span className="inline-flex rounded-full bg-white px-3 py-1 text-xs font-bold text-gray-400 ring-1 ring-gray-200">No communities yet</span>
+                                        ) : (project.communities || []).map((community) => (
+                                            <div key={community.community_id} className="rounded-xl bg-white px-3 py-3 ring-1 ring-gray-200">
+                                                <div className="flex items-start justify-between gap-4">
+                                                    <div>
+                                                        <span className="text-sm font-bold text-gray-800">{community.community_name}</span>
+                                                        <p className={`mt-1 text-xs font-bold ${community.layout_plan_path ? 'text-emerald-600' : 'text-gray-400'}`}>
+                                                            {community.layout_plan_path ? 'Layout uploaded' : 'No layout yet'}
+                                                        </p>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => startEditingCommunity(project.project_id, community)}
+                                                        className="inline-flex items-center gap-1 text-xs font-bold text-brand-600 hover:text-brand-800"
+                                                    >
+                                                        <Pencil className="h-3.5 w-3.5" />
+                                                        Edit
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </Card>
 
-                    <Card title="Floor Plans" subtitle="Plans can be project-wide or targeted to a specific community.">
-                        <div className="space-y-3">{data.plans.length === 0 ? <p className="text-sm font-medium text-gray-500">No floor plans have been created yet.</p> : data.plans.map((plan) => <div key={plan.plan_id} className="rounded-2xl border border-gray-100 bg-gray-50 p-4"><p className="font-bold text-gray-900">{plan.plan_name}</p><p className="mt-1 text-sm text-gray-500">{getProjectName(data.projects, plan.project_id)} {getCommunityName(data.projects, plan.project_id, plan.community_id) ? `• ${getCommunityName(data.projects, plan.project_id, plan.community_id)}` : '• All communities'}</p><p className="mt-1 text-sm text-gray-500">{plan.number_of_rooms || 'N/A'} rooms • {plan.square_footage || 'N/A'} sqft</p></div>)}</div>
+                    <Card title="Floor Plans" subtitle="Plans can be project-wide or targeted to a specific community, and every saved record can be reopened.">
+                        <div className="space-y-3">
+                            {data.plans.length === 0 ? (
+                                <p className="text-sm font-medium text-gray-500">No floor plans have been created yet.</p>
+                            ) : data.plans.map((plan) => {
+                                const communityName = getCommunityName(data.projects, plan.project_id, plan.community_id);
+
+                                return (
+                                    <div key={plan.plan_id} className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div>
+                                                <p className="font-bold text-gray-900">{plan.plan_name}</p>
+                                                <p className="mt-1 text-sm text-gray-500">
+                                                    {getProjectName(data.projects, plan.project_id)}
+                                                    {' - '}
+                                                    {communityName || 'All communities'}
+                                                </p>
+                                                <p className="mt-1 text-sm text-gray-500">{plan.number_of_rooms || 'N/A'} rooms - {plan.square_footage || 'N/A'} sqft</p>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => startEditingPlan(plan)}
+                                                className="inline-flex items-center gap-1 text-sm font-bold text-brand-600 hover:text-brand-800"
+                                            >
+                                                <Pencil className="h-4 w-4" />
+                                                Edit
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </Card>
-                    {false && (<Card title="Floor Plans" subtitle="Plans can be project-wide or targeted to a specific community.">
-                        <div className="space-y-3">{data.plans.map((plan) => <div key={plan.plan_id} className="rounded-2xl border border-gray-100 bg-gray-50 p-4"><p className="font-bold text-gray-900">{plan.plan_name}</p><p className="mt-1 text-sm text-gray-500">{plan.number_of_rooms || 'N/A'} rooms • {plan.square_footage || 'N/A'} sqft</p></div>)}</div>
-                    </Card>)}
                 </div>
             )}
 
@@ -382,11 +562,12 @@ export default function Settings() {
                         </div>
                     ) : (
                         <>
-                            <form className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_1fr_0.8fr_auto]" onSubmit={handleCreateUser} autoComplete="off">
+                            <form className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_1fr_0.8fr_auto_auto]" onSubmit={handleSaveUser} autoComplete="off">
                                 <input type="text" required name="new-user-full-name" autoComplete="off" placeholder="Full Name" value={userForm.full_name} onChange={(event) => setUserForm((current) => ({ ...current, full_name: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
                                 <input type="email" required name="new-user-email" autoComplete="off" placeholder="Email Address" value={userForm.email} onChange={(event) => setUserForm((current) => ({ ...current, email: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
-                                <input type="password" required name="new-user-password" autoComplete="new-password" placeholder="Temporary Password" value={userForm.password} onChange={(event) => setUserForm((current) => ({ ...current, password: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
-                                <button type="submit" disabled={savingUser} className="rounded-xl bg-brand-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-brand-500/20 disabled:opacity-60">{savingUser ? 'Adding...' : 'Add Analyst'}</button>
+                                <input type="password" required={!editingUserId} name="new-user-password" autoComplete="new-password" placeholder={editingUserId ? 'Set a new password (optional)' : 'Temporary Password'} value={userForm.password} onChange={(event) => setUserForm((current) => ({ ...current, password: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                                <button type="submit" disabled={savingUser} className="rounded-xl bg-brand-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-brand-500/20 disabled:opacity-60">{savingUser ? 'Saving...' : editingUserId ? 'Save Analyst' : 'Add Analyst'}</button>
+                                {editingUserId && <button type="button" onClick={() => { setEditingUserId(null); setUserForm(emptyUserForm); }} className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-bold text-gray-600"><X className="h-4 w-4" />Cancel</button>}
                             </form>
 
                             <div className="mt-6 overflow-hidden rounded-2xl border border-gray-100">
@@ -397,7 +578,28 @@ export default function Settings() {
                                             <tr><td className="px-6 py-6 text-sm font-medium text-gray-500" colSpan={6}>No user accounts have been created yet.</td></tr>
                                         ) : data.users.map((user) => {
                                             const isCurrentUser = user.user_id === data.currentUser?.user_id;
-                                            return <tr key={user.user_id}><td className="px-6 py-4 font-bold text-gray-900">{user.full_name || 'Unnamed user'}</td><td className="px-6 py-4 font-medium text-gray-500">{user.email}</td><td className="px-6 py-4"><span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${user.is_admin ? 'bg-sky-50 text-sky-700 ring-1 ring-sky-100' : 'bg-slate-100 text-slate-700 ring-1 ring-slate-200'}`}><ShieldCheck className="h-3.5 w-3.5" />{user.is_admin ? 'Administrator' : 'Analyst'}</span></td><td className="px-6 py-4"><span className={`rounded-md px-2 py-0.5 text-[10px] font-black uppercase ${user.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 text-gray-500'}`}>{user.is_active ? 'Active' : 'Inactive'}</span></td><td className="px-6 py-4 font-medium text-gray-500">{formatDateLabel(user.created_at)}</td><td className="px-6 py-4 text-right">{isCurrentUser ? <span className="text-xs font-black uppercase tracking-[0.2em] text-gray-400">Current user</span> : user.is_active ? <button type="button" disabled={deactivatingUserId === user.user_id} onClick={() => handleDeactivateUser(user)} className="inline-flex items-center gap-2 rounded-xl border border-red-200 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50 disabled:opacity-60"><Trash2 className="h-3.5 w-3.5" />{deactivatingUserId === user.user_id ? 'Deactivating...' : 'Deactivate'}</button> : <span className="text-xs font-black uppercase tracking-[0.2em] text-gray-400">Soft deleted</span>}</td></tr>;
+
+                                            return (
+                                                <tr key={user.user_id}>
+                                                    <td className="px-6 py-4 font-bold text-gray-900">{user.full_name || 'Unnamed user'}</td>
+                                                    <td className="px-6 py-4 font-medium text-gray-500">{user.email}</td>
+                                                    <td className="px-6 py-4"><span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${user.is_admin ? 'bg-sky-50 text-sky-700 ring-1 ring-sky-100' : 'bg-slate-100 text-slate-700 ring-1 ring-slate-200'}`}><ShieldCheck className="h-3.5 w-3.5" />{user.is_admin ? 'Administrator' : 'Analyst'}</span></td>
+                                                    <td className="px-6 py-4"><span className={`rounded-md px-2 py-0.5 text-[10px] font-black uppercase ${user.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 text-gray-500'}`}>{user.is_active ? 'Active' : 'Inactive'}</span></td>
+                                                    <td className="px-6 py-4 font-medium text-gray-500">{formatDateLabel(user.created_at)}</td>
+                                                    <td className="px-6 py-4 text-right">
+                                                        <div className="flex items-center justify-end gap-3">
+                                                            <button type="button" onClick={() => startEditingUser(user)} className="inline-flex items-center gap-1 text-xs font-bold text-brand-600 hover:text-brand-800"><Pencil className="h-3.5 w-3.5" />Edit</button>
+                                                            {isCurrentUser ? (
+                                                                <span className="text-xs font-black uppercase tracking-[0.2em] text-gray-400">Current user</span>
+                                                            ) : user.is_active ? (
+                                                                <button type="button" disabled={deactivatingUserId === user.user_id} onClick={() => handleDeactivateUser(user)} className="inline-flex items-center gap-2 rounded-xl border border-red-200 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50 disabled:opacity-60"><Trash2 className="h-3.5 w-3.5" />{deactivatingUserId === user.user_id ? 'Deactivating...' : 'Deactivate'}</button>
+                                                            ) : (
+                                                                <span className="text-xs font-black uppercase tracking-[0.2em] text-gray-400">Soft deleted</span>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
                                         })}
                                     </tbody>
                                 </table>

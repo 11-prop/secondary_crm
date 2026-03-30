@@ -96,6 +96,10 @@ export async function createAgent(payload) {
     return unwrapItem(await post("/agents/", payload));
 }
 
+export async function updateAgent(agentId, payload) {
+    return unwrapItem(await patch(`/agents/${agentId}`, payload));
+}
+
 export async function listProperties(params = {}) {
     return unwrapItems(await get("/properties/", { params }));
 }
@@ -116,8 +120,16 @@ export async function createProject(payload) {
     return unwrapItem(await post("/projects/", payload));
 }
 
+export async function updateProject(projectId, payload) {
+    return unwrapItem(await patch(`/projects/${projectId}`, payload));
+}
+
 export async function createCommunity(projectId, payload) {
     return unwrapItem(await post(`/projects/${projectId}/communities`, payload));
+}
+
+export async function updateCommunity(projectId, communityId, payload) {
+    return unwrapItem(await patch(`/projects/${projectId}/communities/${communityId}`, payload));
 }
 
 export async function listFloorPlans() {
@@ -126,6 +138,10 @@ export async function listFloorPlans() {
 
 export async function createFloorPlan(payload) {
     return unwrapItem(await post("/floor_plans/", payload));
+}
+
+export async function updateFloorPlan(planId, payload) {
+    return unwrapItem(await patch(`/floor_plans/${planId}`, payload));
 }
 
 export async function listNotesByCustomer(customerId) {
@@ -163,6 +179,10 @@ export async function listUsers() {
 
 export async function createUser(payload) {
     return unwrapItem(await post("/users/", payload));
+}
+
+export async function updateUser(userId, payload) {
+    return unwrapItem(await patch(`/users/${userId}`, payload));
 }
 
 export async function getCurrentUser() {

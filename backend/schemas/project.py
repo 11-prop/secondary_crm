@@ -11,6 +11,9 @@ class ProjectBase(BaseModel):
 class ProjectCreate(ProjectBase):
     pass
 
+class ProjectUpdate(BaseModel):
+    project_name: Optional[str] = None
+
 class ProjectResponse(ProjectBase):
     project_id: int
     communities: List[CommunityResponse] = []

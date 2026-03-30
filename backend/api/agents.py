@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from configs.settings import get_db
 from models.agent import Agent
-from schemas.agent import AgentCreate, AgentResponse
+from schemas.agent import AgentCreate, AgentResponse, AgentUpdate
 from schemas.response import APIResponse, APIPaginatedResponse, PaginationMeta
 from api.deps import get_current_user
 from models.user import User
@@ -26,3 +26,21 @@ def create_agent(agent_in: AgentCreate, db: Session = Depends(get_db), current_u
     db.commit()
     db.refresh(new_agent)
     return APIResponse(status="success", status_code=201, message="Agent created", data=new_agent)
+
+
+@router.patch("/{agent_id}", response_model=APIResponse[AgentResponse])
+def update_agent(agent_id: int, agent_in: AgentUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    agent = db.query(Agent).filter(Agent.agent_id == agent_id).first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    updates = agent_in.dict(exclude_unset=True)
+    if "agent_type" in updates and updates["agent_type"] not in ['Buyer', 'Seller']:
+        raise HTTPException(status_code=400, detail="Agent type must be 'Buyer' or 'Seller'")
+
+    for field, value in updates.items():
+        setattr(agent, field, value)
+
+    db.commit()
+    db.refresh(agent)
+    return APIResponse(status="success", status_code=200, message="Agent updated", data=agent)

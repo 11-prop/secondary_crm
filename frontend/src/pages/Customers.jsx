@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, Plus, RefreshCw, Search, Users } from 'lucide-react';
+import { ArrowRight, Pencil, Plus, RefreshCw, Search, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-import { createCustomer, listAgents, listCustomers } from '../api/resources';
+import { createCustomer, listAgents, listCustomers, updateCustomer } from '../api/resources';
 import AddCustomerDrawer from '../components/AddCustomerDrawer';
 import Card from '../components/Card';
 import { formatCustomerInitials, formatCustomerName, getClientTypeClasses } from '../lib/formatters';
@@ -14,6 +14,7 @@ export default function Customers() {
     const [isLoading, setIsLoading] = useState(true);
     const [isCreating, setIsCreating] = useState(false);
     const [isDrawerOpen, setDrawerOpen] = useState(false);
+    const [editingCustomer, setEditingCustomer] = useState(null);
     const [error, setError] = useState('');
 
     useEffect(() => {
@@ -52,6 +53,24 @@ export default function Customers() {
         }
     }
 
+    async function handleSaveCustomer(payload) {
+        if (!editingCustomer) {
+            return handleCreateCustomer(payload);
+        }
+
+        setIsCreating(true);
+        try {
+            const updatedCustomer = await updateCustomer(editingCustomer.customer_id, payload);
+            setCustomers((current) => current.map((customer) => (customer.customer_id === updatedCustomer.customer_id ? updatedCustomer : customer)));
+            setError('');
+            return { success: true };
+        } catch (error) {
+            return { success: false, error: error.message };
+        } finally {
+            setIsCreating(false);
+        }
+    }
+
     const filteredCustomers = customers.filter((customer) => {
         const searchValue = searchTerm.toLowerCase();
         return (
@@ -69,7 +88,7 @@ export default function Customers() {
                     <p className="mt-2 text-lg text-gray-500">Manage lead protection and client profiles.</p>
                 </div>
                 <button
-                    onClick={() => setDrawerOpen(true)}
+                    onClick={() => { setEditingCustomer(null); setDrawerOpen(true); }}
                     className="flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-2.5 font-semibold text-white shadow-md transition-all active:scale-95 hover:bg-brand-700"
                 >
                     <Plus className="h-5 w-5" />
@@ -175,12 +194,22 @@ export default function Customers() {
                                             <div className="mt-0.5 text-gray-400">{sellerAgent?.name || 'No seller agent'}</div>
                                         </td>
                                         <td className="whitespace-nowrap px-6 py-4 text-right text-sm font-bold">
-                                            <Link
-                                                to={`/customers/${customer.customer_id}`}
-                                                className="flex items-center justify-end gap-1 text-brand-600 transition-transform group-hover:translate-x-1 hover:text-brand-900"
-                                            >
-                                                View 360 <ArrowRight className="h-4 w-4" />
-                                            </Link>
+                                            <div className="flex items-center justify-end gap-4">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setEditingCustomer(customer); setDrawerOpen(true); }}
+                                                    className="inline-flex items-center gap-1 text-gray-500 transition-colors hover:text-brand-700"
+                                                >
+                                                    <Pencil className="h-4 w-4" />
+                                                    Edit
+                                                </button>
+                                                <Link
+                                                    to={`/customers/${customer.customer_id}`}
+                                                    className="flex items-center justify-end gap-1 text-brand-600 transition-transform group-hover:translate-x-1 hover:text-brand-900"
+                                                >
+                                                    View 360 <ArrowRight className="h-4 w-4" />
+                                                </Link>
+                                            </div>
                                         </td>
                                     </tr>
                                 );
@@ -200,10 +229,13 @@ export default function Customers() {
 
             <AddCustomerDrawer
                 isOpen={isDrawerOpen}
-                onClose={() => setDrawerOpen(false)}
+                onClose={() => { setDrawerOpen(false); setEditingCustomer(null); }}
                 agents={agents}
-                onSubmit={handleCreateCustomer}
+                onSubmit={handleSaveCustomer}
                 isSubmitting={isCreating}
+                initialData={editingCustomer}
+                title={editingCustomer ? 'Edit Customer Profile' : 'New Customer Profile'}
+                submitLabel={editingCustomer ? 'Save Customer Changes' : 'Create Customer Profile'}
             />
         </div>
     );

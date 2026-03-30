@@ -6,7 +6,7 @@ from configs.settings import get_db
 from models.community import Community
 from models.floor_plan import FloorPlan
 from models.project import Project
-from schemas.floor_plan import FloorPlanCreate, FloorPlanResponse
+from schemas.floor_plan import FloorPlanCreate, FloorPlanResponse, FloorPlanUpdate
 from schemas.response import APIResponse, APIPaginatedResponse, PaginationMeta
 from api.deps import get_current_user
 from models.user import User
@@ -44,3 +44,22 @@ def create_floor_plan(plan_in: FloorPlanCreate, db: Session = Depends(get_db), c
     db.commit()
     db.refresh(new_plan)
     return APIResponse(status="success", status_code=201, message="Floor plan created", data=new_plan)
+
+
+@router.patch("/{plan_id}", response_model=APIResponse[FloorPlanResponse])
+def update_floor_plan(plan_id: int, plan_in: FloorPlanUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    plan = db.query(FloorPlan).filter(FloorPlan.plan_id == plan_id).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Floor plan not found")
+
+    updates = plan_in.dict(exclude_unset=True)
+    project_id = updates.get("project_id", plan.project_id)
+    community_id = updates.get("community_id", plan.community_id)
+    validate_floor_plan_context(db, project_id, community_id)
+
+    for field, value in updates.items():
+        setattr(plan, field, value)
+
+    db.commit()
+    db.refresh(plan)
+    return APIResponse(status="success", status_code=200, message="Floor plan updated", data=plan)

@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session, selectinload
 from configs.settings import get_db
 from models.community import Community
 from models.project import Project
-from schemas.community import CommunityCreate, CommunityResponse
-from schemas.project import ProjectCreate, ProjectResponse
+from schemas.community import CommunityCreate, CommunityResponse, CommunityUpdate
+from schemas.project import ProjectCreate, ProjectResponse, ProjectUpdate
 from schemas.response import APIResponse, APIPaginatedResponse, PaginationMeta
 from api.deps import get_current_user
 from models.user import User
@@ -34,6 +34,24 @@ def create_project(project_in: ProjectCreate, db: Session = Depends(get_db), cur
     db.commit()
     db.refresh(new_project)
     return APIResponse(status="success", status_code=201, message="Project created", data=new_project)
+
+
+@router.patch("/{project_id}", response_model=APIResponse[ProjectResponse])
+def update_project(project_id: int, project_in: ProjectUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    project = db.query(Project).options(selectinload(Project.communities)).filter(Project.project_id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    updates = project_in.dict(exclude_unset=True)
+    if "project_name" in updates:
+        project_name = (updates["project_name"] or "").strip()
+        if not project_name:
+            raise HTTPException(status_code=400, detail="Project name is required")
+        project.project_name = project_name
+
+    db.commit()
+    db.refresh(project)
+    return APIResponse(status="success", status_code=200, message="Project updated", data=project)
 
 
 @router.get("/{project_id}/communities", response_model=APIPaginatedResponse[CommunityResponse])
@@ -87,3 +105,42 @@ def create_project_community(
     db.commit()
     db.refresh(community)
     return APIResponse(status="success", status_code=201, message="Community created", data=community)
+
+
+@router.patch("/{project_id}/communities/{community_id}", response_model=APIResponse[CommunityResponse])
+def update_project_community(
+    project_id: int,
+    community_id: int,
+    community_in: CommunityUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    community = db.query(Community).filter(Community.community_id == community_id, Community.project_id == project_id).first()
+    if not community:
+        raise HTTPException(status_code=404, detail="Community not found")
+
+    updates = community_in.dict(exclude_unset=True)
+    if "community_name" in updates:
+        community_name = (updates["community_name"] or "").strip()
+        if not community_name:
+            raise HTTPException(status_code=400, detail="Community name is required")
+
+        existing = (
+            db.query(Community)
+            .filter(
+                Community.project_id == project_id,
+                Community.community_id != community_id,
+                Community.community_name.ilike(community_name),
+            )
+            .first()
+        )
+        if existing:
+            raise HTTPException(status_code=400, detail="A community with this name already exists for the selected project")
+        community.community_name = community_name
+
+    if "layout_plan_path" in updates:
+        community.layout_plan_path = updates["layout_plan_path"]
+
+    db.commit()
+    db.refresh(community)
+    return APIResponse(status="success", status_code=200, message="Community updated", data=community)

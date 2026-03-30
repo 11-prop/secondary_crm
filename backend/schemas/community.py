@@ -11,6 +11,10 @@ class CommunityBase(BaseModel):
 class CommunityCreate(CommunityBase):
     pass
 
+class CommunityUpdate(BaseModel):
+    community_name: str | None = None
+    layout_plan_path: str | None = None
+
 
 class CommunityResponse(CommunityBase):
     community_id: int

@@ -15,16 +15,32 @@ function parseNullableId(value) {
     return value ? Number(value) : null;
 }
 
-export default function AddCustomerDrawer({ isOpen, onClose, agents = [], onSubmit, isSubmitting }) {
+function toFormState(customer) {
+    if (!customer) {
+        return initialFormState;
+    }
+
+    return {
+        first_name: customer.first_name || '',
+        last_name: customer.last_name || '',
+        email: customer.email || '',
+        phone_number: customer.phone_number || '',
+        client_type: customer.client_type || 'Prospect',
+        assigned_buyer_agent_id: customer.assigned_buyer_agent_id ? String(customer.assigned_buyer_agent_id) : '',
+        assigned_seller_agent_id: customer.assigned_seller_agent_id ? String(customer.assigned_seller_agent_id) : '',
+    };
+}
+
+export default function AddCustomerDrawer({ isOpen, onClose, agents = [], onSubmit, isSubmitting, initialData = null, title = 'New Customer Profile', submitLabel = 'Create Customer Profile' }) {
     const [form, setForm] = useState(initialFormState);
     const [submitError, setSubmitError] = useState('');
 
     useEffect(() => {
         if (isOpen) {
-            setForm(initialFormState);
+            setForm(toFormState(initialData));
             setSubmitError('');
         }
-    }, [isOpen]);
+    }, [initialData, isOpen]);
 
     if (!isOpen) return null;
 
@@ -61,7 +77,7 @@ export default function AddCustomerDrawer({ isOpen, onClose, agents = [], onSubm
                 <div className="flex items-center justify-between border-b border-gray-100 bg-brand-900 p-6 text-white">
                     <div className="flex items-center gap-2">
                         <UserPlus className="h-5 w-5" />
-                        <h2 className="text-lg font-bold uppercase tracking-tight">New Customer Profile</h2>
+                        <h2 className="text-lg font-bold uppercase tracking-tight">{title}</h2>
                     </div>
                     <button onClick={onClose} className="rounded-full p-2 hover:bg-white/10">
                         <X />
@@ -175,7 +191,7 @@ export default function AddCustomerDrawer({ isOpen, onClose, agents = [], onSubm
                             disabled={isSubmitting}
                             className="w-full rounded-xl bg-brand-600 py-4 text-sm font-bold text-white shadow-xl shadow-brand-500/20 transition-all hover:bg-brand-700 disabled:opacity-60"
                         >
-                            {isSubmitting ? 'Creating Profile...' : 'Create Customer Profile'}
+                            {isSubmitting ? 'Saving Profile...' : submitLabel}
                         </button>
                     </div>
                 </form>
