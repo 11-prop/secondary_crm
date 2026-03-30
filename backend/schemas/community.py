@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 class CommunityBase(BaseModel):
     community_name: str
+    layout_plan_path: str | None = None
 
 
 class CommunityCreate(CommunityBase):

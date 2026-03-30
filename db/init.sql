@@ -61,6 +61,7 @@ CREATE TABLE communities (
     community_id SERIAL PRIMARY KEY,
     project_id INTEGER NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
     community_name VARCHAR(150) NOT NULL,
+    layout_plan_path TEXT, -- Physical file path for the community layout asset
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_communities_project_name UNIQUE (project_id, community_name)
 );

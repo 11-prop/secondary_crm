@@ -7,7 +7,6 @@ from schemas.community import CommunityResponse
 
 class ProjectBase(BaseModel):
     project_name: str
-    layout_plan_path: Optional[str] = None
 
 class ProjectCreate(ProjectBase):
     pass

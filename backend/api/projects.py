@@ -29,7 +29,7 @@ def get_projects(skip: int = 0, limit: int = 100, db: Session = Depends(get_db),
 
 @router.post("/", response_model=APIResponse[ProjectResponse])
 def create_project(project_in: ProjectCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    new_project = Project(**project_in.dict())
+    new_project = Project(project_name=project_in.project_name)
     db.add(new_project)
     db.commit()
     db.refresh(new_project)
@@ -78,7 +78,11 @@ def create_project_community(
     if existing:
         raise HTTPException(status_code=400, detail="A community with this name already exists for the selected project")
 
-    community = Community(project_id=project_id, community_name=community_name)
+    community = Community(
+        project_id=project_id,
+        community_name=community_name,
+        layout_plan_path=community_in.layout_plan_path,
+    )
     db.add(community)
     db.commit()
     db.refresh(community)

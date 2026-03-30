@@ -29,9 +29,18 @@ def ensure_schema_updates():
                     community_id SERIAL PRIMARY KEY,
                     project_id INTEGER NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
                     community_name VARCHAR(150) NOT NULL,
+                    layout_plan_path TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     CONSTRAINT uq_communities_project_name UNIQUE (project_id, community_name)
                 )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE communities
+                ADD COLUMN IF NOT EXISTS layout_plan_path TEXT
                 """
             )
         )
@@ -54,8 +63,8 @@ def ensure_schema_updates():
         connection.execute(
             text(
                 """
-                INSERT INTO communities (project_id, community_name)
-                SELECT p.project_id, TRIM(p.neighborhood_name)
+                INSERT INTO communities (project_id, community_name, layout_plan_path)
+                SELECT p.project_id, TRIM(p.neighborhood_name), p.layout_plan_path
                 FROM projects p
                 WHERE COALESCE(TRIM(p.neighborhood_name), '') <> ''
                   AND NOT EXISTS (
@@ -64,6 +73,20 @@ def ensure_schema_updates():
                       WHERE c.project_id = p.project_id
                         AND LOWER(c.community_name) = LOWER(TRIM(p.neighborhood_name))
                   )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE communities c
+                SET layout_plan_path = p.layout_plan_path
+                FROM projects p
+                WHERE c.project_id = p.project_id
+                  AND LOWER(c.community_name) = LOWER(TRIM(p.neighborhood_name))
+                  AND c.layout_plan_path IS NULL
+                  AND p.layout_plan_path IS NOT NULL
+                  AND COALESCE(TRIM(p.neighborhood_name), '') <> ''
                 """
             )
         )

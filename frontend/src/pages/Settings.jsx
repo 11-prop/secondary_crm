@@ -18,8 +18,8 @@ import {
 } from '../api/resources';
 import { formatDateLabel } from '../lib/formatters';
 
-const emptyProjectForm = { project_name: '', file: null };
-const emptyCommunityForm = { project_id: '', community_name: '' };
+const emptyProjectForm = { project_name: '' };
+const emptyCommunityForm = { project_id: '', community_name: '', file: null };
 const emptyPlanForm = { project_id: '', community_id: '', plan_name: '', number_of_rooms: '', square_footage: '', amenities: '', file: null };
 const emptyUserForm = { full_name: '', email: '', password: '' };
 const emptyPasswordForm = { current_password: '', new_password: '', confirm_password: '' };
@@ -96,8 +96,7 @@ export default function Settings() {
         event.preventDefault();
         setSavingProject(true);
         try {
-            const layout_plan_path = projectForm.file ? await uploadImage('projects', projectForm.file) : null;
-            const payload = { project_name: projectForm.project_name, layout_plan_path };
+            const payload = { project_name: projectForm.project_name };
             const project = await createProject(payload);
             const hydratedProject = { ...project, communities: project.communities || [] };
             setData((current) => ({ ...current, projects: [hydratedProject, ...current.projects] }));
@@ -116,7 +115,8 @@ export default function Settings() {
         event.preventDefault();
         setSavingCommunity(true);
         try {
-            const community = await createCommunity(Number(communityForm.project_id), { community_name: communityForm.community_name });
+            const layout_plan_path = communityForm.file ? await uploadImage('projects', communityForm.file) : null;
+            const community = await createCommunity(Number(communityForm.project_id), { community_name: communityForm.community_name, layout_plan_path });
             setData((current) => ({
                 ...current,
                 projects: current.projects.map((project) => (
@@ -125,7 +125,7 @@ export default function Settings() {
                         : project
                 )),
             }));
-            setCommunityForm((current) => ({ ...current, community_name: '' }));
+            setCommunityForm((current) => ({ ...current, community_name: '', file: null }));
             setPlanForm((current) => current.project_id === communityForm.project_id ? { ...current, community_id: String(community.community_id) } : current);
             showSuccess(`Community "${community.community_name}" added.`);
         } catch (error) {
@@ -329,18 +329,18 @@ export default function Settings() {
 
             {activeTab === 'assets' && (
                 <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 xl:grid-cols-3">
-                    <Card title="Add New Project" subtitle="Create the top-level development and attach a layout asset.">
+                    <Card title="Add New Project" subtitle="Create the top-level development that will contain multiple communities.">
                         <form className="space-y-4" onSubmit={handleCreateProject}>
                             <input type="text" required placeholder="Project Name" value={projectForm.project_name} onChange={(event) => setProjectForm((current) => ({ ...current, project_name: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
-                            <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-gray-200 p-4 text-sm font-semibold text-gray-600"><Upload className="h-4 w-4 text-brand-600" />Upload layout asset (image or PDF, up to 20 MB)<input type="file" accept="image/*,.pdf,application/pdf" className="hidden" onChange={(event) => setProjectForm((current) => ({ ...current, file: event.target.files?.[0] || null }))} /></label>
                             <button type="submit" disabled={savingProject} className="w-full rounded-xl bg-gray-900 py-3 text-sm font-bold text-white shadow-xl disabled:opacity-60">{savingProject ? 'Creating project...' : 'Create Project'}</button>
                         </form>
                     </Card>
 
-                    <Card title="Add Community" subtitle="A single project can own multiple communities or clusters.">
+                    <Card title="Add Community" subtitle="A single project can own multiple communities or clusters, each with its own layout asset.">
                         <form className="space-y-4" onSubmit={handleCreateCommunity}>
                             <select required value={communityForm.project_id} onChange={(event) => setCommunityForm((current) => ({ ...current, project_id: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option value="">Select Project...</option>{data.projects.map((project) => <option key={project.project_id} value={project.project_id}>{project.project_name}</option>)}</select>
                             <input type="text" required placeholder="Community Name" value={communityForm.community_name} onChange={(event) => setCommunityForm((current) => ({ ...current, community_name: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                            <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-gray-200 p-4 text-sm font-semibold text-gray-600"><Upload className="h-4 w-4 text-brand-600" />Upload community layout asset (image or PDF, up to 20 MB)<input type="file" accept="image/*,.pdf,application/pdf" className="hidden" onChange={(event) => setCommunityForm((current) => ({ ...current, file: event.target.files?.[0] || null }))} /></label>
                             <button type="submit" disabled={savingCommunity || data.projects.length === 0} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-3 text-sm font-bold text-white shadow-lg shadow-brand-500/20 disabled:opacity-60"><MapPinned className="h-4 w-4" />{savingCommunity ? 'Adding community...' : 'Add Community'}</button>
                             {data.projects.length === 0 && <p className="text-sm font-medium text-gray-500">Create a project first, then add its communities here.</p>}
                         </form>
@@ -362,7 +362,7 @@ export default function Settings() {
                     </Card>
 
                     <Card title="Projects" subtitle="Each project can now hold multiple communities.">
-                        <div className="space-y-3">{data.projects.length === 0 ? <p className="text-sm font-medium text-gray-500">No projects have been created yet.</p> : data.projects.map((project) => <div key={project.project_id} className="rounded-2xl border border-gray-100 bg-gray-50 p-4"><p className="font-bold text-gray-900">{project.project_name}</p><p className="mt-1 text-sm text-gray-500">{(project.communities || []).length} communities linked</p><div className="mt-3 flex flex-wrap gap-2">{(project.communities || []).length === 0 ? <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-gray-400 ring-1 ring-gray-200">No communities yet</span> : (project.communities || []).map((community) => <span key={community.community_id} className="rounded-full bg-white px-3 py-1 text-xs font-bold text-gray-700 ring-1 ring-gray-200">{community.community_name}</span>)}</div></div>)}</div>
+                        <div className="space-y-3">{data.projects.length === 0 ? <p className="text-sm font-medium text-gray-500">No projects have been created yet.</p> : data.projects.map((project) => <div key={project.project_id} className="rounded-2xl border border-gray-100 bg-gray-50 p-4"><p className="font-bold text-gray-900">{project.project_name}</p><p className="mt-1 text-sm text-gray-500">{(project.communities || []).length} communities linked</p><div className="mt-3 space-y-2">{(project.communities || []).length === 0 ? <span className="inline-flex rounded-full bg-white px-3 py-1 text-xs font-bold text-gray-400 ring-1 ring-gray-200">No communities yet</span> : (project.communities || []).map((community) => <div key={community.community_id} className="flex items-center justify-between rounded-xl bg-white px-3 py-2 ring-1 ring-gray-200"><span className="text-sm font-bold text-gray-800">{community.community_name}</span><span className={`text-xs font-bold ${community.layout_plan_path ? 'text-emerald-600' : 'text-gray-400'}`}>{community.layout_plan_path ? 'Layout uploaded' : 'No layout yet'}</span></div>)}</div></div>)}</div>
                     </Card>
 
                     <Card title="Floor Plans" subtitle="Plans can be project-wide or targeted to a specific community.">

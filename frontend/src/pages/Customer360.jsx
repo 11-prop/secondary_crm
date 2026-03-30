@@ -212,7 +212,7 @@ export default function Customer360() {
                                     {getPropertyAttributeTags(property).map((tag) => <span key={tag} className="inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-700">{tag}</span>)}
                                 </div>
                                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                                    <AssetBlock title={property.community ? `${property.community.community_name} layout` : 'Project layout'} asset={resolveAssetUrl(property.project?.layout_plan_path)} />
+                                    <AssetBlock title={property.community ? `${property.community.community_name} layout` : 'Community layout'} asset={resolveAssetUrl(property.community?.layout_plan_path)} />
                                     <AssetBlock title="Floor Plan" asset={resolveAssetUrl(property.plan?.floor_plan_image_path)} />
                                 </div>
                                 <div className="grid grid-cols-2 gap-4 rounded-2xl border border-gray-100 bg-gray-50 p-4 md:grid-cols-4">

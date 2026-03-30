@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import relationship
 
 from configs.settings import Base
@@ -11,6 +11,7 @@ class Community(Base):
     community_id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.project_id", ondelete="CASCADE"), nullable=False, index=True)
     community_name = Column(String(150), nullable=False)
+    layout_plan_path = Column(Text)
     created_at = Column(DateTime, default=func.now())
 
     project = relationship("Project", back_populates="communities")
