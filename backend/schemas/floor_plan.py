@@ -4,6 +4,7 @@ from typing import Optional
 
 class FloorPlanBase(BaseModel):
     project_id: int
+    community_id: Optional[int] = None
     plan_name: str
     number_of_rooms: Optional[int] = None
     square_footage: Optional[float] = None

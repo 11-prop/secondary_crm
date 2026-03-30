@@ -14,12 +14,14 @@ class PropertyBase(BaseModel):
 class PropertyCreate(PropertyBase):
     owner_customer_id: Optional[int] = None
     project_id: Optional[int] = None
+    community_id: Optional[int] = None
     plan_id: Optional[int] = None
     property_status: str = "Off-Market"
 
 class PropertyUpdate(BaseModel):
     owner_customer_id: Optional[int] = None
     project_id: Optional[int] = None
+    community_id: Optional[int] = None
     plan_id: Optional[int] = None
     property_status: Optional[str] = None
     villa_number: Optional[str] = None
@@ -33,6 +35,7 @@ class PropertyResponse(PropertyBase):
     property_id: int
     owner_customer_id: Optional[int]
     project_id: Optional[int]
+    community_id: Optional[int]
     plan_id: Optional[int]
     property_status: str
     created_at: datetime

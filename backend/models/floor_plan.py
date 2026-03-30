@@ -9,6 +9,7 @@ class FloorPlan(Base):
     
     plan_id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.project_id"))
+    community_id = Column(Integer, ForeignKey("communities.community_id", ondelete="SET NULL"), nullable=True)
     plan_name = Column(String(100), nullable=False)
     number_of_rooms = Column(Integer)
     square_footage = Column(Numeric)
@@ -17,4 +18,5 @@ class FloorPlan(Base):
 
     # Relationships
     project = relationship("Project", back_populates="floor_plans")
+    community = relationship("Community", back_populates="floor_plans")
     properties = relationship("Property", back_populates="plan")

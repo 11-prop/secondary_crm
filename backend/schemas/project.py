@@ -1,10 +1,12 @@
 # backend/schemas/project.py
+from typing import List, Optional
+
 from pydantic import BaseModel
-from typing import Optional
+
+from schemas.community import CommunityResponse
 
 class ProjectBase(BaseModel):
     project_name: str
-    neighborhood_name: Optional[str] = None
     layout_plan_path: Optional[str] = None
 
 class ProjectCreate(ProjectBase):
@@ -12,6 +14,7 @@ class ProjectCreate(ProjectBase):
 
 class ProjectResponse(ProjectBase):
     project_id: int
+    communities: List[CommunityResponse] = []
 
     class Config:
         from_attributes = True

@@ -4,6 +4,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 from configs.settings import settings, engine, Base, SessionLocal
 from core.security import get_password_hash
 from models.user import User
@@ -13,6 +14,89 @@ from api import auth, customers, properties, agents, projects, floor_plans, inte
 # Create database tables if they don't exist yet
 # (Though init.sql handles this via Docker, it's safe to keep for SQLAlchemy)
 Base.metadata.create_all(bind=engine)
+
+
+def ensure_schema_updates():
+    """
+    Apply lightweight, idempotent schema adjustments for deployments that already
+    have an initialized database but do not yet have the latest community model.
+    """
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS communities (
+                    community_id SERIAL PRIMARY KEY,
+                    project_id INTEGER NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+                    community_name VARCHAR(150) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT uq_communities_project_name UNIQUE (project_id, community_name)
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE floor_plans
+                ADD COLUMN IF NOT EXISTS community_id INTEGER REFERENCES communities(community_id) ON DELETE SET NULL
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE properties
+                ADD COLUMN IF NOT EXISTS community_id INTEGER REFERENCES communities(community_id) ON DELETE SET NULL
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO communities (project_id, community_name)
+                SELECT p.project_id, TRIM(p.neighborhood_name)
+                FROM projects p
+                WHERE COALESCE(TRIM(p.neighborhood_name), '') <> ''
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM communities c
+                      WHERE c.project_id = p.project_id
+                        AND LOWER(c.community_name) = LOWER(TRIM(p.neighborhood_name))
+                  )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE floor_plans fp
+                SET community_id = c.community_id
+                FROM projects p
+                JOIN communities c
+                  ON c.project_id = p.project_id
+                 AND LOWER(c.community_name) = LOWER(TRIM(p.neighborhood_name))
+                WHERE fp.project_id = p.project_id
+                  AND fp.community_id IS NULL
+                  AND COALESCE(TRIM(p.neighborhood_name), '') <> ''
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE properties pr
+                SET community_id = c.community_id
+                FROM projects p
+                JOIN communities c
+                  ON c.project_id = p.project_id
+                 AND LOWER(c.community_name) = LOWER(TRIM(p.neighborhood_name))
+                WHERE pr.project_id = p.project_id
+                  AND pr.community_id IS NULL
+                  AND COALESCE(TRIM(p.neighborhood_name), '') <> ''
+                """
+            )
+        )
 
 
 def ensure_bootstrap_admin():
@@ -43,6 +127,7 @@ def ensure_bootstrap_admin():
 
 
 ensure_bootstrap_admin()
+ensure_schema_updates()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

@@ -52,14 +52,24 @@ CREATE TABLE interaction_notes (
 CREATE TABLE projects (
     project_id SERIAL PRIMARY KEY,
     project_name VARCHAR(150) NOT NULL,
-    neighborhood_name VARCHAR(150),
+    neighborhood_name VARCHAR(150), -- Legacy single-label field kept for backward compatibility
     layout_plan_path TEXT -- Physical file path (e.g., /app/uploads/projects/palm_layout.jpg)
+);
+
+-- Communities (Sub-areas within a project)
+CREATE TABLE communities (
+    community_id SERIAL PRIMARY KEY,
+    project_id INTEGER NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+    community_name VARCHAR(150) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_communities_project_name UNIQUE (project_id, community_name)
 );
 
 -- Floor Plans (Catalogs)
 CREATE TABLE floor_plans (
     plan_id SERIAL PRIMARY KEY,
     project_id INTEGER REFERENCES projects(project_id) ON DELETE CASCADE,
+    community_id INTEGER REFERENCES communities(community_id) ON DELETE SET NULL,
     plan_name VARCHAR(100) NOT NULL,
     number_of_rooms INTEGER,
     square_footage NUMERIC,
@@ -73,6 +83,7 @@ CREATE TABLE properties (
     villa_number VARCHAR(50) NOT NULL,
     owner_customer_id INTEGER REFERENCES customers(customer_id) ON DELETE SET NULL,
     project_id INTEGER REFERENCES projects(project_id),
+    community_id INTEGER REFERENCES communities(community_id) ON DELETE SET NULL,
     plan_id INTEGER REFERENCES floor_plans(plan_id),
     
     -- Location Attributes

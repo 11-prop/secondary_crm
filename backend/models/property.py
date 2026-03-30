@@ -13,6 +13,7 @@ class Property(Base):
     # Foreign Keys
     owner_customer_id = Column(Integer, ForeignKey("customers.customer_id"))
     project_id = Column(Integer, ForeignKey("projects.project_id"))
+    community_id = Column(Integer, ForeignKey("communities.community_id", ondelete="SET NULL"))
     plan_id = Column(Integer, ForeignKey("floor_plans.plan_id"))
     
     # Booleans for quick filtering
@@ -27,5 +28,6 @@ class Property(Base):
     # Relationships
     owner = relationship("Customer", back_populates="properties")
     project = relationship("Project", back_populates="properties")
+    community = relationship("Community", back_populates="properties")
     plan = relationship("FloorPlan", back_populates="properties")
     transactions = relationship("Transaction", back_populates="property")

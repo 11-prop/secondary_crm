@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ChevronLeft, Home, Mail, MessageSquare, Phone, Plus, User } from 'lucide-react';
 
+import AssetPreview from '../components/AssetPreview';
 import Card from '../components/Card';
 import {
     createNote,
@@ -18,7 +19,7 @@ import {
 } from '../api/resources';
 import { formatCurrency, formatCustomerName, formatDateLabel, getPropertyAttributeTags, getPropertyStatusClasses } from '../lib/formatters';
 
-const emptyPropertyForm = { villa_number: '', project_id: '', plan_id: '', property_status: 'Off-Market', is_corner: false, is_lake_front: false, is_park_front: false, is_beach: false, is_market: false };
+const emptyPropertyForm = { villa_number: '', project_id: '', community_id: '', plan_id: '', property_status: 'Off-Market', is_corner: false, is_lake_front: false, is_park_front: false, is_beach: false, is_market: false };
 
 export default function Customer360() {
     const { id } = useParams();
@@ -95,6 +96,7 @@ export default function Customer360() {
             villa_number: propertyForm.villa_number,
             owner_customer_id: customerId,
             project_id: propertyForm.project_id ? Number(propertyForm.project_id) : null,
+            community_id: propertyForm.community_id ? Number(propertyForm.community_id) : null,
             plan_id: propertyForm.plan_id ? Number(propertyForm.plan_id) : null,
             property_status: propertyForm.property_status,
             is_corner: propertyForm.is_corner,
@@ -120,10 +122,20 @@ export default function Customer360() {
 
     const buyerAgents = data.agents.filter((agent) => agent.agent_type === 'Buyer' && agent.is_active);
     const sellerAgents = data.agents.filter((agent) => agent.agent_type === 'Seller' && agent.is_active);
-    const plans = data.plans.filter((plan) => !propertyForm.project_id || plan.project_id === Number(propertyForm.project_id));
+    const availableCommunities = getProjectCommunities(data.projects, propertyForm.project_id);
+    const plans = data.plans.filter((plan) => {
+        if (propertyForm.project_id && plan.project_id !== Number(propertyForm.project_id)) {
+            return false;
+        }
+        if (propertyForm.community_id) {
+            return plan.community_id === null || plan.community_id === Number(propertyForm.community_id);
+        }
+        return true;
+    });
     const properties = data.properties.filter((property) => property.owner_customer_id === customerId).map((property) => ({
         ...property,
         project: data.projects.find((project) => project.project_id === property.project_id),
+        community: getProjectCommunities(data.projects, property.project_id).find((community) => community.community_id === property.community_id),
         plan: data.plans.find((plan) => plan.plan_id === property.plan_id),
         transactions: data.tx[property.property_id] || [],
     }));
@@ -177,7 +189,8 @@ export default function Customer360() {
                                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                                     <input type="text" required placeholder="Villa or unit number" value={propertyForm.villa_number} onChange={(event) => setPropertyForm((current) => ({ ...current, villa_number: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
                                     <select value={propertyForm.property_status} onChange={(event) => setPropertyForm((current) => ({ ...current, property_status: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option>Off-Market</option><option>Primary Residence</option><option>Active Listing</option><option>Rented</option></select>
-                                    <select value={propertyForm.project_id} onChange={(event) => setPropertyForm((current) => ({ ...current, project_id: event.target.value, plan_id: '' }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option value="">Select project</option>{data.projects.map((project) => <option key={project.project_id} value={project.project_id}>{project.project_name}</option>)}</select>
+                                    <select value={propertyForm.project_id} onChange={(event) => setPropertyForm((current) => ({ ...current, project_id: event.target.value, community_id: '', plan_id: '' }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option value="">Select project</option>{data.projects.map((project) => <option key={project.project_id} value={project.project_id}>{project.project_name}</option>)}</select>
+                                    <select value={propertyForm.community_id} onChange={(event) => setPropertyForm((current) => ({ ...current, community_id: event.target.value, plan_id: '' }))} disabled={!propertyForm.project_id} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none disabled:opacity-50"><option value="">All communities in project</option>{availableCommunities.map((community) => <option key={community.community_id} value={community.community_id}>{community.community_name}</option>)}</select>
                                     <select value={propertyForm.plan_id} onChange={(event) => setPropertyForm((current) => ({ ...current, plan_id: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option value="">Select floor plan</option>{plans.map((plan) => <option key={plan.plan_id} value={plan.plan_id}>{plan.plan_name}</option>)}</select>
                                 </div>
                                 <div className="grid grid-cols-2 gap-3 text-sm font-semibold text-gray-700 md:grid-cols-5">
@@ -199,14 +212,18 @@ export default function Customer360() {
                                     {getPropertyAttributeTags(property).map((tag) => <span key={tag} className="inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-700">{tag}</span>)}
                                 </div>
                                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                                    <ImageBlock title="Neighborhood" image={resolveAssetUrl(property.project?.layout_plan_path)} />
-                                    <ImageBlock title="Floor Plan" image={resolveAssetUrl(property.plan?.floor_plan_image_path)} />
+                                    <AssetBlock title={property.community ? `${property.community.community_name} layout` : 'Project layout'} asset={resolveAssetUrl(property.project?.layout_plan_path)} />
+                                    <AssetBlock title="Floor Plan" asset={resolveAssetUrl(property.plan?.floor_plan_image_path)} />
                                 </div>
                                 <div className="grid grid-cols-2 gap-4 rounded-2xl border border-gray-100 bg-gray-50 p-4 md:grid-cols-4">
                                     <Stat label="Project" value={property.project?.project_name || 'Not linked'} />
+                                    <Stat label="Community" value={property.community?.community_name || 'Project-wide'} />
                                     <Stat label="Rooms" value={property.plan?.number_of_rooms ?? 'N/A'} />
                                     <Stat label="Sqft" value={property.plan?.square_footage ?? 'N/A'} />
+                                </div>
+                                <div className="grid grid-cols-1 gap-4 rounded-2xl border border-gray-100 bg-gray-50 p-4 md:grid-cols-2">
                                     <Stat label="Added" value={formatDateLabel(property.created_at)} />
+                                    <Stat label="Plan scope" value={property.plan?.community_id ? 'Community-specific' : 'Project-wide'} />
                                 </div>
                                 <div className="overflow-hidden rounded-2xl border border-gray-100">
                                     <table className="w-full text-left text-sm">
@@ -248,11 +265,20 @@ function Stat({ label, value }) {
     return <div className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3"><p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">{label}</p><p className="mt-2 text-sm font-bold text-gray-900">{value}</p></div>;
 }
 
-function ImageBlock({ title, image }) {
+function AssetBlock({ title, asset }) {
     return (
         <div className="space-y-2">
             <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">{title}</p>
-            {image ? <img src={image} alt={title} className="aspect-video w-full rounded-2xl border border-gray-200 object-cover" /> : <div className="flex aspect-video items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-sm font-medium text-gray-400">No image uploaded</div>}
+            <AssetPreview title={title} src={asset} />
         </div>
     );
+}
+
+function getProjectCommunities(projects, projectId) {
+    const normalizedProjectId = Number(projectId);
+    if (!normalizedProjectId) {
+        return [];
+    }
+
+    return projects.find((project) => project.project_id === normalizedProjectId)?.communities || [];
 }

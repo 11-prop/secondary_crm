@@ -13,5 +13,6 @@ class Project(Base):
     layout_plan_path = Column(Text)
 
     # Relationships
+    communities = relationship("Community", back_populates="project", cascade="all, delete-orphan")
     floor_plans = relationship("FloorPlan", back_populates="project")
     properties = relationship("Property", back_populates="project")

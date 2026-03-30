@@ -15,7 +15,7 @@ import {
 } from '../api/resources';
 import { formatCurrency, formatCustomerName, formatDateLabel, getPropertyAttributeTags } from '../lib/formatters';
 
-const emptyPropertyForm = { villa_number: '', owner_customer_id: '', project_id: '', plan_id: '', property_status: 'Off-Market', is_corner: false, is_lake_front: false, is_park_front: false, is_beach: false, is_market: false };
+const emptyPropertyForm = { villa_number: '', owner_customer_id: '', project_id: '', community_id: '', plan_id: '', property_status: 'Off-Market', is_corner: false, is_lake_front: false, is_park_front: false, is_beach: false, is_market: false };
 const emptyTransactionForm = { transaction_date: '', transaction_type: 'Sale', price: '', notes: '' };
 
 export default function Properties() {
@@ -63,6 +63,7 @@ export default function Properties() {
             villa_number: propertyForm.villa_number,
             owner_customer_id: propertyForm.owner_customer_id ? Number(propertyForm.owner_customer_id) : null,
             project_id: propertyForm.project_id ? Number(propertyForm.project_id) : null,
+            community_id: propertyForm.community_id ? Number(propertyForm.community_id) : null,
             plan_id: propertyForm.plan_id ? Number(propertyForm.plan_id) : null,
             property_status: propertyForm.property_status,
             is_corner: propertyForm.is_corner,
@@ -118,13 +119,23 @@ export default function Properties() {
     const filtered = data.properties.filter((property) => {
         const customer = data.customers.find((item) => item.customer_id === property.owner_customer_id);
         const project = data.projects.find((item) => item.project_id === property.project_id);
-        const target = `${property.villa_number} ${formatCustomerName(customer)} ${project?.project_name || ''}`.toLowerCase();
+        const community = getProjectCommunities(data.projects, property.project_id).find((item) => item.community_id === property.community_id);
+        const target = `${property.villa_number} ${formatCustomerName(customer)} ${project?.project_name || ''} ${community?.community_name || ''}`.toLowerCase();
         const matchesSearch = target.includes(searchTerm.toLowerCase());
         const matchesStatus = statusFilter === 'All' || property.property_status === statusFilter;
         return matchesSearch && matchesStatus;
     });
 
-    const selectablePlans = data.plans.filter((plan) => !propertyForm.project_id || plan.project_id === Number(propertyForm.project_id));
+    const selectableCommunities = getProjectCommunities(data.projects, propertyForm.project_id);
+    const selectablePlans = data.plans.filter((plan) => {
+        if (propertyForm.project_id && plan.project_id !== Number(propertyForm.project_id)) {
+            return false;
+        }
+        if (propertyForm.community_id) {
+            return plan.community_id === null || plan.community_id === Number(propertyForm.community_id);
+        }
+        return true;
+    });
     const selectedProperty = data.properties.find((property) => property.property_id === selectedPropertyId);
 
     return (
@@ -154,7 +165,8 @@ export default function Properties() {
                         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                             <input type="text" required placeholder="Villa or unit number" value={propertyForm.villa_number} onChange={(event) => setPropertyForm((current) => ({ ...current, villa_number: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
                             <select value={propertyForm.owner_customer_id} onChange={(event) => setPropertyForm((current) => ({ ...current, owner_customer_id: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option value="">Select owner</option>{data.customers.map((customer) => <option key={customer.customer_id} value={customer.customer_id}>{formatCustomerName(customer)}</option>)}</select>
-                            <select value={propertyForm.project_id} onChange={(event) => setPropertyForm((current) => ({ ...current, project_id: event.target.value, plan_id: '' }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option value="">Select project</option>{data.projects.map((project) => <option key={project.project_id} value={project.project_id}>{project.project_name}</option>)}</select>
+                            <select value={propertyForm.project_id} onChange={(event) => setPropertyForm((current) => ({ ...current, project_id: event.target.value, community_id: '', plan_id: '' }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option value="">Select project</option>{data.projects.map((project) => <option key={project.project_id} value={project.project_id}>{project.project_name}</option>)}</select>
+                            <select value={propertyForm.community_id} onChange={(event) => setPropertyForm((current) => ({ ...current, community_id: event.target.value, plan_id: '' }))} disabled={!propertyForm.project_id} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none disabled:opacity-50"><option value="">All communities in project</option>{selectableCommunities.map((community) => <option key={community.community_id} value={community.community_id}>{community.community_name}</option>)}</select>
                             <select value={propertyForm.plan_id} onChange={(event) => setPropertyForm((current) => ({ ...current, plan_id: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option value="">Select floor plan</option>{selectablePlans.map((plan) => <option key={plan.plan_id} value={plan.plan_id}>{plan.plan_name}</option>)}</select>
                             <select value={propertyForm.property_status} onChange={(event) => setPropertyForm((current) => ({ ...current, property_status: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option>Off-Market</option><option>Primary Residence</option><option>Active Listing</option><option>Rented</option></select>
                         </div>
@@ -175,8 +187,9 @@ export default function Properties() {
                                 {filtered.map((property) => {
                                     const customer = data.customers.find((item) => item.customer_id === property.owner_customer_id);
                                     const project = data.projects.find((item) => item.project_id === property.project_id);
+                                    const community = getProjectCommunities(data.projects, property.project_id).find((item) => item.community_id === property.community_id);
                                     const transactions = data.tx[property.property_id] || [];
-                                    return <tr key={property.property_id} className="hover:bg-brand-50/20"><td className="px-6 py-4"><div className="flex items-center gap-3"><div className="rounded-xl bg-brand-50 p-2 text-brand-600"><Building2 className="h-5 w-5" /></div><div><p className="font-bold text-gray-900">{property.villa_number}</p><p className="text-xs font-medium text-gray-400">Added {formatDateLabel(property.created_at)}</p></div></div></td><td className="px-6 py-4"><Link to={customer ? `/customers/${customer.customer_id}` : '#'} className="text-sm font-bold text-gray-900 hover:text-brand-600">{customer ? formatCustomerName(customer) : 'Unassigned owner'}</Link></td><td className="px-6 py-4 text-sm font-semibold text-gray-600">{project?.project_name || 'Unassigned project'}</td><td className="px-6 py-4"><select value={property.property_status} onChange={(event) => handleStatusChange(property.property_id, event.target.value)} className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-bold outline-none"><option>Off-Market</option><option>Primary Residence</option><option>Active Listing</option><option>Rented</option></select></td><td className="px-6 py-4 text-sm text-gray-500">{getPropertyAttributeTags(property).join(', ') || 'No special attributes'}</td><td className="px-6 py-4 text-right"><button type="button" onClick={() => setSelectedPropertyId(property.property_id)} className="text-sm font-bold text-brand-600 hover:text-brand-800">Add transaction ({transactions.length})</button></td></tr>;
+                                    return <tr key={property.property_id} className="hover:bg-brand-50/20"><td className="px-6 py-4"><div className="flex items-center gap-3"><div className="rounded-xl bg-brand-50 p-2 text-brand-600"><Building2 className="h-5 w-5" /></div><div><p className="font-bold text-gray-900">{property.villa_number}</p><p className="text-xs font-medium text-gray-400">Added {formatDateLabel(property.created_at)}</p></div></div></td><td className="px-6 py-4"><Link to={customer ? `/customers/${customer.customer_id}` : '#'} className="text-sm font-bold text-gray-900 hover:text-brand-600">{customer ? formatCustomerName(customer) : 'Unassigned owner'}</Link></td><td className="px-6 py-4 text-sm font-semibold text-gray-600">{project?.project_name || 'Unassigned project'}<p className="mt-1 text-xs font-medium text-gray-400">{community?.community_name || 'All communities'}</p></td><td className="px-6 py-4"><select value={property.property_status} onChange={(event) => handleStatusChange(property.property_id, event.target.value)} className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-bold outline-none"><option>Off-Market</option><option>Primary Residence</option><option>Active Listing</option><option>Rented</option></select></td><td className="px-6 py-4 text-sm text-gray-500">{getPropertyAttributeTags(property).join(', ') || 'No special attributes'}</td><td className="px-6 py-4 text-right"><button type="button" onClick={() => setSelectedPropertyId(property.property_id)} className="text-sm font-bold text-brand-600 hover:text-brand-800">Add transaction ({transactions.length})</button></td></tr>;
                                 })}
                             </tbody>
                         </table>
@@ -213,4 +226,13 @@ export default function Properties() {
 
 function StatCard({ label, value }) {
     return <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-100"><p className="text-xs font-black uppercase tracking-[0.3em] text-brand-600">{label}</p><p className="mt-4 text-3xl font-black text-gray-900">{value}</p></div>;
+}
+
+function getProjectCommunities(projects, projectId) {
+    const normalizedProjectId = Number(projectId);
+    if (!normalizedProjectId) {
+        return [];
+    }
+
+    return projects.find((project) => project.project_id === normalizedProjectId)?.communities || [];
 }

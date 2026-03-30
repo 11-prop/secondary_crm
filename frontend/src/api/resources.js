@@ -116,6 +116,10 @@ export async function createProject(payload) {
     return unwrapItem(await post("/projects/", payload));
 }
 
+export async function createCommunity(projectId, payload) {
+    return unwrapItem(await post(`/projects/${projectId}/communities`, payload));
+}
+
 export async function listFloorPlans() {
     return unwrapItems(await get("/floor_plans/"));
 }

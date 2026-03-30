@@ -1,6 +1,6 @@
 # backend/api/uploads.py
 import os
-import shutil
+from pathlib import Path
 from uuid import uuid4
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 
@@ -17,6 +17,8 @@ UPLOAD_DIRECTORY = settings.UPLOAD_DIRECTORY
 # Ensure directories exist locally
 os.makedirs(f"{UPLOAD_DIRECTORY}/projects", exist_ok=True)
 os.makedirs(f"{UPLOAD_DIRECTORY}/plans", exist_ok=True)
+ALLOWED_ASSET_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".pdf"}
+ALLOWED_ASSET_CONTENT_TYPES = {"application/pdf"}
 
 @router.post("/image", response_model=APIResponse[dict])
 def upload_image(
@@ -25,26 +27,45 @@ def upload_image(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Uploads an image file to the physical Docker volume.
+    Upload an image or PDF asset to the physical Docker volume.
     Returns the file path to be saved in the database.
     """
     if folder not in ["projects", "plans"]:
         raise HTTPException(status_code=400, detail="Invalid upload folder specified.")
 
-    if not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="File provided is not an image.")
+    file_extension = Path(file.filename or "").suffix.lower()
+    content_type = (file.content_type or "").lower()
+    is_supported_image = content_type.startswith("image/") or file_extension in ALLOWED_ASSET_EXTENSIONS - {".pdf"}
+    is_supported_pdf = content_type in ALLOWED_ASSET_CONTENT_TYPES or file_extension == ".pdf"
+    if not (is_supported_image or is_supported_pdf):
+        raise HTTPException(status_code=400, detail="Only image files and PDFs are supported.")
 
     # Create a unique filename to prevent overwriting
-    file_extension = file.filename.split(".")[-1]
-    unique_filename = f"{uuid4()}.{file_extension}"
+    unique_filename = f"{uuid4()}{file_extension}"
     file_path = f"{UPLOAD_DIRECTORY}/{folder}/{unique_filename}"
+    bytes_written = 0
 
-    # Write the file physically to the disk
+    # Write the file physically to disk while enforcing a safe upload limit.
     try:
         with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            while chunk := file.file.read(1024 * 1024):
+                bytes_written += len(chunk)
+                if bytes_written > settings.MAX_ASSET_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File is too large. The maximum supported size is {settings.MAX_ASSET_UPLOAD_MB} MB.",
+                    )
+                buffer.write(chunk)
+    except HTTPException:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise
     except Exception as e:
+        if os.path.exists(file_path):
+            os.remove(file_path)
         raise HTTPException(status_code=500, detail=f"Could not save file: {str(e)}")
+    finally:
+        file.file.close()
 
     # Return the relative path so the frontend can request it later
     relative_path = f"/uploads/{folder}/{unique_filename}"
@@ -52,6 +73,6 @@ def upload_image(
     return APIResponse(
         status="success",
         status_code=201,
-        message="Image uploaded successfully",
+        message="Asset uploaded successfully",
         data={"file_path": relative_path}
     )

@@ -27,6 +27,7 @@ class Settings:
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7
     UPLOAD_DIRECTORY: str = os.getenv("UPLOAD_DIRECTORY", DEFAULT_UPLOAD_DIRECTORY)
+    MAX_ASSET_UPLOAD_MB: int = int(os.getenv("MAX_ASSET_UPLOAD_MB", "25"))
     DEFAULT_ADMIN_EMAIL: str = os.getenv("DEFAULT_ADMIN_EMAIL", "")
     DEFAULT_ADMIN_PASSWORD: str = os.getenv("DEFAULT_ADMIN_PASSWORD", "")
     DEFAULT_ADMIN_NAME: str = os.getenv("DEFAULT_ADMIN_NAME", "System Administrator")
@@ -47,6 +48,10 @@ class Settings:
             )
             if origin
         ]
+
+    @property
+    def MAX_ASSET_UPLOAD_BYTES(self) -> int:
+        return self.MAX_ASSET_UPLOAD_MB * 1024 * 1024
 
 
 settings = Settings()
