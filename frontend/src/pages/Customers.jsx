@@ -5,12 +5,19 @@ import { Link } from 'react-router-dom';
 import { createCustomer, listAgents, listCustomers, updateCustomer } from '../api/resources';
 import AddCustomerDrawer from '../components/AddCustomerDrawer';
 import Card from '../components/Card';
+import PaginationControls from '../components/PaginationControls';
 import { formatCustomerInitials, formatCustomerName, getClientTypeClasses } from '../lib/formatters';
+
+const DEFAULT_PAGE_SIZE = 25;
 
 export default function Customers() {
     const [searchTerm, setSearchTerm] = useState('');
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
     const [customers, setCustomers] = useState([]);
     const [agents, setAgents] = useState([]);
+    const [meta, setMeta] = useState({ total_records: 0, total_pages: 1, current_page: 1, limit: DEFAULT_PAGE_SIZE });
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
     const [isLoading, setIsLoading] = useState(true);
     const [isCreating, setIsCreating] = useState(false);
     const [isDrawerOpen, setDrawerOpen] = useState(false);
@@ -18,21 +25,47 @@ export default function Customers() {
     const [error, setError] = useState('');
 
     useEffect(() => {
-        loadCustomers();
+        const timeoutId = window.setTimeout(() => {
+            setDebouncedSearchTerm(searchTerm.trim());
+        }, 250);
+
+        return () => window.clearTimeout(timeoutId);
+    }, [searchTerm]);
+
+    useEffect(() => {
+        loadAgents();
     }, []);
 
-    async function loadCustomers() {
+    useEffect(() => {
+        loadCustomers({ page: currentPage, limit: pageSize, search: debouncedSearchTerm });
+    }, [currentPage, pageSize, debouncedSearchTerm]);
+
+    async function loadAgents() {
+        try {
+            const agentsResponse = await listAgents({ limit: 500 });
+            setAgents(agentsResponse.items);
+        } catch (agentError) {
+            setAgents([]);
+            setError(agentError.message);
+        }
+    }
+
+    async function loadCustomers({ page = currentPage, limit = pageSize, search = debouncedSearchTerm } = {}) {
         setIsLoading(true);
 
         try {
-            const [customersResponse, agentsResponse] = await Promise.all([listCustomers(), listAgents()]);
+            const customersResponse = await listCustomers({
+                skip: (page - 1) * limit,
+                limit,
+                q: search || undefined,
+            });
             setCustomers(customersResponse.items);
-            setAgents(agentsResponse.items);
+            setMeta(customersResponse.meta || { total_records: customersResponse.items.length, total_pages: 1, current_page: page, limit });
             setError('');
-        } catch (error) {
+        } catch (loadError) {
             setCustomers([]);
-            setAgents([]);
-            setError(error.message);
+            setMeta({ total_records: 0, total_pages: 1, current_page: page, limit });
+            setError(loadError.message);
         } finally {
             setIsLoading(false);
         }
@@ -42,12 +75,15 @@ export default function Customers() {
         setIsCreating(true);
 
         try {
-            const newCustomer = await createCustomer(payload);
-            setCustomers((current) => [newCustomer, ...current]);
+            await createCustomer(payload);
+            setSearchTerm('');
+            setDebouncedSearchTerm('');
+            setCurrentPage(1);
+            await loadCustomers({ page: 1, limit: pageSize, search: '' });
             setError('');
             return { success: true };
-        } catch (error) {
-            return { success: false, error: error.message };
+        } catch (createError) {
+            return { success: false, error: createError.message };
         } finally {
             setIsCreating(false);
         }
@@ -60,25 +96,18 @@ export default function Customers() {
 
         setIsCreating(true);
         try {
-            const updatedCustomer = await updateCustomer(editingCustomer.customer_id, payload);
-            setCustomers((current) => current.map((customer) => (customer.customer_id === updatedCustomer.customer_id ? updatedCustomer : customer)));
+            await updateCustomer(editingCustomer.customer_id, payload);
+            await loadCustomers({ page: currentPage, limit: pageSize, search: debouncedSearchTerm });
             setError('');
             return { success: true };
-        } catch (error) {
-            return { success: false, error: error.message };
+        } catch (saveError) {
+            return { success: false, error: saveError.message };
         } finally {
             setIsCreating(false);
         }
     }
 
-    const filteredCustomers = customers.filter((customer) => {
-        const searchValue = searchTerm.toLowerCase();
-        return (
-            formatCustomerName(customer).toLowerCase().includes(searchValue) ||
-            (customer.email || '').toLowerCase().includes(searchValue) ||
-            (customer.phone_number || '').toLowerCase().includes(searchValue)
-        );
-    });
+    const protectedLeadCount = customers.filter((customer) => customer.assigned_buyer_agent_id || customer.assigned_seller_agent_id).length;
 
     return (
         <div className="space-y-8">
@@ -99,18 +128,18 @@ export default function Customers() {
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <SummaryCard
                     label="Directory size"
-                    value={customers.length}
-                    caption="Profiles currently loaded in this workspace."
+                    value={meta.total_records}
+                    caption="Total customer records matching the current search."
                 />
                 <SummaryCard
-                    label="Protected leads"
-                    value={customers.filter((customer) => customer.assigned_buyer_agent_id || customer.assigned_seller_agent_id).length}
-                    caption="Customers already assigned to a specialist."
+                    label="Visible protected leads"
+                    value={protectedLeadCount}
+                    caption="Assigned customers on the current page."
                 />
                 <SummaryCard
                     label="Connection"
                     value={error ? 'API issue' : 'Live API'}
-                    caption={error || 'Customer search and create actions are wired to the backend.'}
+                    caption={error || 'Search and pagination now query the backend directly.'}
                 />
             </div>
 
@@ -122,12 +151,12 @@ export default function Customers() {
 
             <Card
                 title="Active Clients"
-                subtitle="All leads currently assigned to the sales team."
-                actions={
+                subtitle="Search reaches across the full dataset, not just the customers shown on this page."
+                actions={(
                     <div className="flex items-center gap-3">
                         <button
                             type="button"
-                            onClick={loadCustomers}
+                            onClick={() => { loadAgents(); loadCustomers({ page: currentPage, limit: pageSize, search: debouncedSearchTerm }); }}
                             className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 text-gray-500 transition-colors hover:bg-gray-50"
                         >
                             <RefreshCw className="h-4 w-4" />
@@ -139,91 +168,110 @@ export default function Customers() {
                                 className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2 pl-10 pr-4 text-sm outline-none transition-all focus:border-brand-500 focus:bg-white focus:ring-4 focus:ring-brand-500/10"
                                 placeholder="Search leads..."
                                 value={searchTerm}
-                                onChange={(event) => setSearchTerm(event.target.value)}
+                                onChange={(event) => {
+                                    setSearchTerm(event.target.value);
+                                    setCurrentPage(1);
+                                }}
                             />
                         </div>
                     </div>
-                }
+                )}
             >
                 {isLoading ? (
                     <div className="py-16 text-center text-sm font-medium text-gray-500">Loading customers...</div>
                 ) : (
-                    <table className="min-w-full divide-y divide-gray-100">
-                        <thead className="bg-gray-50/50">
-                            <tr>
-                                <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400">Name</th>
-                                <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400">Contact Info</th>
-                                <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400">Type</th>
-                                <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400">Assignments</th>
-                                <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-widest text-gray-400">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 bg-white">
-                            {filteredCustomers.map((customer) => {
-                                const buyerAgent = agents.find((agent) => agent.agent_id === customer.assigned_buyer_agent_id);
-                                const sellerAgent = agents.find((agent) => agent.agent_id === customer.assigned_seller_agent_id);
-
-                                return (
-                                    <tr key={customer.customer_id} className="group transition-colors hover:bg-brand-50/30">
-                                        <td className="whitespace-nowrap px-6 py-4">
-                                            <div className="flex items-center">
-                                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-100 ring-2 ring-white">
-                                                    <span className="text-sm font-bold text-brand-600">
-                                                        {formatCustomerInitials(customer)}
-                                                    </span>
-                                                </div>
-                                                <div className="ml-4">
-                                                    <div className="font-semibold text-gray-900">{formatCustomerName(customer)}</div>
-                                                    <div className="text-xs font-medium text-gray-400">
-                                                        Added {new Date(customer.created_at).toLocaleDateString()}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="whitespace-nowrap px-6 py-4 text-sm">
-                                            <div className="font-medium text-gray-900">{customer.email || 'No email recorded'}</div>
-                                            <div className="mt-0.5 text-gray-400">{customer.phone_number || 'No phone recorded'}</div>
-                                        </td>
-                                        <td className="whitespace-nowrap px-6 py-4">
-                                            <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold tracking-wide ${getClientTypeClasses(customer.client_type)}`}>
-                                                {customer.client_type}
-                                            </span>
-                                        </td>
-                                        <td className="whitespace-nowrap px-6 py-4 text-sm">
-                                            <div className="font-semibold text-gray-900">{buyerAgent?.name || 'No buyer agent'}</div>
-                                            <div className="mt-0.5 text-gray-400">{sellerAgent?.name || 'No seller agent'}</div>
-                                        </td>
-                                        <td className="whitespace-nowrap px-6 py-4 text-right text-sm font-bold">
-                                            <div className="flex items-center justify-end gap-4">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => { setEditingCustomer(customer); setDrawerOpen(true); }}
-                                                    className="inline-flex items-center gap-1 text-gray-500 transition-colors hover:text-brand-700"
-                                                >
-                                                    <Pencil className="h-4 w-4" />
-                                                    Edit
-                                                </button>
-                                                <Link
-                                                    to={`/customers/${customer.customer_id}`}
-                                                    className="flex items-center justify-end gap-1 text-brand-600 transition-transform group-hover:translate-x-1 hover:text-brand-900"
-                                                >
-                                                    View 360 <ArrowRight className="h-4 w-4" />
-                                                </Link>
-                                            </div>
-                                        </td>
+                    <>
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-100">
+                                <thead className="bg-gray-50/50">
+                                    <tr>
+                                        <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400">Name</th>
+                                        <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400">Contact Info</th>
+                                        <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400">Type</th>
+                                        <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400">Assignments</th>
+                                        <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-widest text-gray-400">Actions</th>
                                     </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                )}
+                                </thead>
+                                <tbody className="divide-y divide-gray-100 bg-white">
+                                    {customers.map((customer) => {
+                                        const buyerAgent = agents.find((agent) => agent.agent_id === customer.assigned_buyer_agent_id);
+                                        const sellerAgent = agents.find((agent) => agent.agent_id === customer.assigned_seller_agent_id);
 
-                {!isLoading && filteredCustomers.length === 0 && (
-                    <div className="bg-gray-50/30 py-20 text-center">
-                        <Users className="mx-auto h-12 w-12 text-gray-300" />
-                        <h3 className="mt-4 text-lg font-semibold text-gray-900">No customers found</h3>
-                        <p className="mt-2 text-gray-500">Try adjusting your search query.</p>
-                    </div>
+                                        return (
+                                            <tr key={customer.customer_id} className="group transition-colors hover:bg-brand-50/30">
+                                                <td className="whitespace-nowrap px-6 py-4">
+                                                    <div className="flex items-center">
+                                                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-100 ring-2 ring-white">
+                                                            <span className="text-sm font-bold text-brand-600">
+                                                                {formatCustomerInitials(customer)}
+                                                            </span>
+                                                        </div>
+                                                        <div className="ml-4">
+                                                            <div className="font-semibold text-gray-900">{formatCustomerName(customer)}</div>
+                                                            <div className="text-xs font-medium text-gray-400">
+                                                                Added {new Date(customer.created_at).toLocaleDateString()}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="whitespace-nowrap px-6 py-4 text-sm">
+                                                    <div className="font-medium text-gray-900">{customer.email || 'No email recorded'}</div>
+                                                    <div className="mt-0.5 text-gray-400">{customer.phone_number || 'No phone recorded'}</div>
+                                                </td>
+                                                <td className="whitespace-nowrap px-6 py-4">
+                                                    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold tracking-wide ${getClientTypeClasses(customer.client_type)}`}>
+                                                        {customer.client_type}
+                                                    </span>
+                                                </td>
+                                                <td className="whitespace-nowrap px-6 py-4 text-sm">
+                                                    <div className="font-semibold text-gray-900">{buyerAgent?.name || 'No buyer agent'}</div>
+                                                    <div className="mt-0.5 text-gray-400">{sellerAgent?.name || 'No seller agent'}</div>
+                                                </td>
+                                                <td className="whitespace-nowrap px-6 py-4 text-right text-sm font-bold">
+                                                    <div className="flex items-center justify-end gap-4">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => { setEditingCustomer(customer); setDrawerOpen(true); }}
+                                                            className="inline-flex items-center gap-1 text-gray-500 transition-colors hover:text-brand-700"
+                                                        >
+                                                            <Pencil className="h-4 w-4" />
+                                                            Edit
+                                                        </button>
+                                                        <Link
+                                                            to={`/customers/${customer.customer_id}`}
+                                                            className="flex items-center justify-end gap-1 text-brand-600 transition-transform group-hover:translate-x-1 hover:text-brand-900"
+                                                        >
+                                                            View 360 <ArrowRight className="h-4 w-4" />
+                                                        </Link>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {customers.length === 0 && (
+                            <div className="bg-gray-50/30 py-20 text-center">
+                                <Users className="mx-auto h-12 w-12 text-gray-300" />
+                                <h3 className="mt-4 text-lg font-semibold text-gray-900">No customers found</h3>
+                                <p className="mt-2 text-gray-500">Try adjusting your search query.</p>
+                            </div>
+                        )}
+
+                        <PaginationControls
+                            currentPage={meta.current_page}
+                            totalPages={meta.total_pages}
+                            totalRecords={meta.total_records}
+                            limit={meta.limit}
+                            onPageChange={setCurrentPage}
+                            onLimitChange={(nextLimit) => {
+                                setPageSize(nextLimit);
+                                setCurrentPage(1);
+                            }}
+                        />
+                    </>
                 )}
             </Card>
 

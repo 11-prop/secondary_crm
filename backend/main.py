@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from configs.settings import settings, engine, Base, SessionLocal
-from core.property_attributes import LEGACY_PROPERTY_ATTRIBUTE_DEFINITIONS
+from core.property_attributes import LEGACY_PROPERTY_ATTRIBUTE_DEFINITIONS, SEEDED_LOCATION_ATTRIBUTE_DEFINITIONS
 from core.security import get_password_hash
 from models.user import User
 
@@ -106,6 +106,22 @@ def ensure_schema_updates():
                 definition,
             )
 
+        for definition in SEEDED_LOCATION_ATTRIBUTE_DEFINITIONS:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO property_attribute_definitions (key, label, value_type, options, sort_order, is_active, is_system)
+                    VALUES (:key, :label, :value_type, '[]'::jsonb, :sort_order, TRUE, :is_system)
+                    ON CONFLICT (key) DO UPDATE
+                    SET label = EXCLUDED.label,
+                        value_type = EXCLUDED.value_type,
+                        sort_order = EXCLUDED.sort_order,
+                        is_active = TRUE
+                    """
+                ),
+                definition,
+            )
+
         connection.execute(
             text(
                 """
@@ -194,6 +210,50 @@ def ensure_schema_updates():
                     """
                 ),
                 {"key": definition["key"]},
+            )
+
+        connection.execute(
+            text(
+                """
+                UPDATE property_attribute_definitions
+                SET is_active = FALSE
+                WHERE key = 'property_location'
+                """
+            )
+        )
+
+        location_backfills = {
+            "perimeter": "LOWER(pav.value_text) LIKE '%perimeter%'",
+            "near_road": "LOWER(pav.value_text) LIKE '%road%'",
+            "near_water": "LOWER(pav.value_text) LIKE '%near water%' OR LOWER(pav.value_text) LIKE '%/ water%' OR LOWER(pav.value_text) LIKE '%water /%'",
+            "internal_waterway": "LOWER(pav.value_text) LIKE '%internal waterway%'",
+            "near_amenities": "LOWER(pav.value_text) LIKE '%amenit%'",
+            "internal_cluster": "LOWER(pav.value_text) LIKE '%internal cluster%'",
+        }
+
+        for key, condition in location_backfills.items():
+            connection.execute(
+                text(
+                    f"""
+                    INSERT INTO property_attribute_values (property_id, attribute_definition_id, value_boolean)
+                    SELECT pav.property_id, d.attribute_definition_id, TRUE
+                    FROM property_attribute_values pav
+                    JOIN property_attribute_definitions source_definition
+                      ON source_definition.attribute_definition_id = pav.attribute_definition_id
+                    JOIN property_attribute_definitions d
+                      ON d.key = :key
+                    WHERE source_definition.key = 'property_location'
+                      AND pav.value_text IS NOT NULL
+                      AND ({condition})
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM property_attribute_values existing
+                          WHERE existing.property_id = pav.property_id
+                            AND existing.attribute_definition_id = d.attribute_definition_id
+                      )
+                    """
+                ),
+                {"key": key},
             )
 
 

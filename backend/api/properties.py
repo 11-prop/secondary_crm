@@ -2,11 +2,13 @@
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 
 from core.property_attributes import LEGACY_PROPERTY_ATTRIBUTE_KEYS
 from configs.settings import get_db
 from models.community import Community
+from models.customer import Customer
 from models.floor_plan import FloorPlan
 from models.project import Project
 from models.property import Property
@@ -160,17 +162,62 @@ def get_properties(
     skip: int = 0,
     limit: int = 100,
     owner_customer_id: int | None = None,
+    property_status: str | None = None,
+    q: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    query = db.query(Property).options(
-        selectinload(Property.attribute_values).selectinload(PropertyAttributeValue.attribute_definition)
+    query = (
+        db.query(
+            Property.property_id,
+            func.max(Property.created_at).label("created_at"),
+        )
+        .outerjoin(Customer, Property.owner_customer_id == Customer.customer_id)
+        .outerjoin(Project, Property.project_id == Project.project_id)
+        .outerjoin(Community, Property.community_id == Community.community_id)
+        .outerjoin(FloorPlan, Property.plan_id == FloorPlan.plan_id)
+        .outerjoin(PropertyAttributeValue, PropertyAttributeValue.property_id == Property.property_id)
+        .outerjoin(
+            PropertyAttributeDefinition,
+            PropertyAttributeDefinition.attribute_definition_id == PropertyAttributeValue.attribute_definition_id,
+        )
     )
     if owner_customer_id is not None:
         query = query.filter(Property.owner_customer_id == owner_customer_id)
+    if property_status:
+        query = query.filter(Property.property_status == property_status)
+    if q:
+        term = f"%{q.strip()}%"
+        query = query.filter(
+            or_(
+                Property.villa_number.ilike(term),
+                Property.property_status.ilike(term),
+                Customer.first_name.ilike(term),
+                Customer.last_name.ilike(term),
+                Customer.email.ilike(term),
+                Customer.phone_number.ilike(term),
+                Project.project_name.ilike(term),
+                Community.community_name.ilike(term),
+                FloorPlan.plan_name.ilike(term),
+                PropertyAttributeDefinition.label.ilike(term),
+                PropertyAttributeValue.value_text.ilike(term),
+            )
+        )
 
+    query = query.group_by(Property.property_id)
     total = query.count()
-    properties = query.order_by(Property.created_at.desc()).offset(skip).limit(limit).all()
+    property_rows = query.order_by(func.max(Property.created_at).desc()).offset(skip).limit(limit).all()
+    property_ids = [row.property_id for row in property_rows]
+    properties = []
+    if property_ids:
+        loaded = (
+            db.query(Property)
+            .options(selectinload(Property.attribute_values).selectinload(PropertyAttributeValue.attribute_definition))
+            .filter(Property.property_id.in_(property_ids))
+            .all()
+        )
+        loaded_by_id = {property.property_id: property for property in loaded}
+        properties = [loaded_by_id[property_id] for property_id in property_ids if property_id in loaded_by_id]
     
     meta = PaginationMeta(
         total_records=total,

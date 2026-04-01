@@ -44,13 +44,12 @@ export default function Customer360() {
                 getCustomer(customerId),
                 listAgents(),
                 listNotesByCustomer(customerId),
-                listProperties(),
+                listProperties({ limit: 500, owner_customer_id: customerId }),
                 listProjects({ limit: 500 }),
                 listFloorPlans({ limit: 500 }),
                 listPropertyAttributeDefinitions({ limit: 500, active_only: true }),
             ]);
-            const owned = propertiesRes.items.filter((property) => property.owner_customer_id === customerId);
-            const txEntries = await Promise.all(owned.map(async (property) => [property.property_id, (await listTransactionsByProperty(property.property_id)).items]));
+            const txEntries = await Promise.all(propertiesRes.items.map(async (property) => [property.property_id, (await listTransactionsByProperty(property.property_id)).items]));
             setData({
                 customer,
                 agents: agentsRes.items,
@@ -140,7 +139,7 @@ export default function Customer360() {
         }
         return true;
     });
-    const properties = data.properties.filter((property) => property.owner_customer_id === customerId).map((property) => ({
+    const properties = data.properties.map((property) => ({
         ...property,
         project: data.projects.find((project) => project.project_id === property.project_id),
         community: getProjectCommunities(data.projects, property.project_id).find((community) => community.community_id === property.community_id),

@@ -11,6 +11,15 @@ LEGACY_PROPERTY_ATTRIBUTE_DEFINITIONS = [
     {"key": "is_market", "label": "Market-facing", "value_type": "boolean", "sort_order": 50, "is_system": True},
 ]
 
+SEEDED_LOCATION_ATTRIBUTE_DEFINITIONS = [
+    {"key": "perimeter", "label": "Perimeter", "value_type": "boolean", "sort_order": 110, "is_system": False},
+    {"key": "near_road", "label": "Road-facing", "value_type": "boolean", "sort_order": 120, "is_system": False},
+    {"key": "near_water", "label": "Near Water", "value_type": "boolean", "sort_order": 130, "is_system": False},
+    {"key": "internal_waterway", "label": "Internal Waterway", "value_type": "boolean", "sort_order": 140, "is_system": False},
+    {"key": "near_amenities", "label": "Near Amenities", "value_type": "boolean", "sort_order": 150, "is_system": False},
+    {"key": "internal_cluster", "label": "Internal Cluster", "value_type": "boolean", "sort_order": 160, "is_system": False},
+]
+
 LEGACY_PROPERTY_ATTRIBUTE_KEYS = {definition["key"] for definition in LEGACY_PROPERTY_ATTRIBUTE_DEFINITIONS}
 LEGACY_PROPERTY_ATTRIBUTE_LABELS = {definition["key"]: definition["label"] for definition in LEGACY_PROPERTY_ATTRIBUTE_DEFINITIONS}
 
