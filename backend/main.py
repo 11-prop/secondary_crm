@@ -6,10 +6,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from configs.settings import settings, engine, Base, SessionLocal
+from core.property_attributes import LEGACY_PROPERTY_ATTRIBUTE_DEFINITIONS
 from core.security import get_password_hash
 from models.user import User
 
-from api import auth, customers, properties, agents, projects, floor_plans, interaction_notes, transactions, uploads, import_data, users
+from api import auth, customers, properties, agents, projects, floor_plans, interaction_notes, transactions, uploads, import_data, property_attributes, users
 
 # Create database tables if they don't exist yet
 # (Though init.sql handles this via Docker, it's safe to keep for SQLAlchemy)
@@ -60,6 +61,61 @@ def ensure_schema_updates():
                 """
             )
         )
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS property_attribute_definitions (
+                    attribute_definition_id SERIAL PRIMARY KEY,
+                    key VARCHAR(80) NOT NULL UNIQUE,
+                    label VARCHAR(120) NOT NULL,
+                    value_type VARCHAR(20) NOT NULL DEFAULT 'boolean',
+                    options JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    is_system BOOLEAN NOT NULL DEFAULT FALSE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS property_attribute_values (
+                    property_id INTEGER NOT NULL REFERENCES properties(property_id) ON DELETE CASCADE,
+                    attribute_definition_id INTEGER NOT NULL REFERENCES property_attribute_definitions(attribute_definition_id) ON DELETE CASCADE,
+                    value_boolean BOOLEAN,
+                    value_text TEXT,
+                    value_number NUMERIC,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (property_id, attribute_definition_id)
+                )
+                """
+            )
+        )
+
+        for definition in LEGACY_PROPERTY_ATTRIBUTE_DEFINITIONS:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO property_attribute_definitions (key, label, value_type, options, sort_order, is_active, is_system)
+                    VALUES (:key, :label, :value_type, '[]'::jsonb, :sort_order, TRUE, :is_system)
+                    ON CONFLICT (key) DO NOTHING
+                    """
+                ),
+                definition,
+            )
+
+        connection.execute(
+            text(
+                """
+                UPDATE property_attribute_definitions
+                SET created_at = CURRENT_TIMESTAMP
+                WHERE created_at IS NULL
+                """
+            )
+        )
+
         connection.execute(
             text(
                 """
@@ -120,6 +176,25 @@ def ensure_schema_updates():
                 """
             )
         )
+        for definition in LEGACY_PROPERTY_ATTRIBUTE_DEFINITIONS:
+            connection.execute(
+                text(
+                    f"""
+                    INSERT INTO property_attribute_values (property_id, attribute_definition_id, value_boolean)
+                    SELECT p.property_id, d.attribute_definition_id, TRUE
+                    FROM properties p
+                    JOIN property_attribute_definitions d ON d.key = :key
+                    WHERE p.{definition["key"]} IS TRUE
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM property_attribute_values pav
+                          WHERE pav.property_id = p.property_id
+                            AND pav.attribute_definition_id = d.attribute_definition_id
+                      )
+                    """
+                ),
+                {"key": definition["key"]},
+            )
 
 
 def ensure_bootstrap_admin():
@@ -174,6 +249,7 @@ app.include_router(properties.router, prefix="/api/properties", tags=["Propertie
 app.include_router(agents.router, prefix="/api/agents", tags=["Agents"])
 app.include_router(projects.router, prefix="/api/projects", tags=["Projects"])
 app.include_router(floor_plans.router, prefix="/api/floor_plans", tags=["Floor Plans"])
+app.include_router(property_attributes.router, prefix="/api/property_attributes", tags=["Property Attributes"])
 app.include_router(interaction_notes.router, prefix="/api/interaction_notes", tags=["Interaction Notes"])
 app.include_router(transactions.router, prefix="/api/transactions", tags=["Transactions"])
 app.include_router(uploads.router, prefix="/api/uploads", tags=["Uploads"])

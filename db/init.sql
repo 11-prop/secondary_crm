@@ -100,6 +100,29 @@ CREATE TABLE properties (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Configurable Property Attributes (Hybrid model)
+CREATE TABLE property_attribute_definitions (
+    attribute_definition_id SERIAL PRIMARY KEY,
+    key VARCHAR(80) UNIQUE NOT NULL,
+    label VARCHAR(120) NOT NULL,
+    value_type VARCHAR(20) NOT NULL DEFAULT 'boolean', -- boolean, text, number, select
+    options JSONB NOT NULL DEFAULT '[]'::jsonb,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    is_system BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE property_attribute_values (
+    property_id INTEGER NOT NULL REFERENCES properties(property_id) ON DELETE CASCADE,
+    attribute_definition_id INTEGER NOT NULL REFERENCES property_attribute_definitions(attribute_definition_id) ON DELETE CASCADE,
+    value_boolean BOOLEAN,
+    value_text TEXT,
+    value_number NUMERIC,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (property_id, attribute_definition_id)
+);
+
 -- Historical Transactions
 CREATE TABLE transactions (
     transaction_id SERIAL PRIMARY KEY,
@@ -118,3 +141,15 @@ CREATE TABLE transactions (
 -- This schema intentionally inserts no demo users, no default passwords,
 -- and no sample CRM records. The first admin account is provisioned by the
 -- backend from environment variables when the database is empty.
+
+-- Default configurable property flags seeded for backward compatibility with
+-- the original hardcoded location booleans. Additional attributes are created
+-- through the CRM settings screen.
+INSERT INTO property_attribute_definitions (key, label, value_type, sort_order, is_active, is_system)
+VALUES
+    ('is_corner', 'Corner', 'boolean', 10, TRUE, TRUE),
+    ('is_lake_front', 'Lake-front', 'boolean', 20, TRUE, TRUE),
+    ('is_park_front', 'Park-front', 'boolean', 30, TRUE, TRUE),
+    ('is_beach', 'Beachfront', 'boolean', 40, TRUE, TRUE),
+    ('is_market', 'Market-facing', 'boolean', 50, TRUE, TRUE)
+ON CONFLICT (key) DO NOTHING;

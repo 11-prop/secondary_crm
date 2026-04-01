@@ -88,8 +88,8 @@ export async function updateCustomer(customerId, payload) {
     return unwrapItem(await patch(`/customers/${customerId}`, payload));
 }
 
-export async function listAgents() {
-    return unwrapItems(await get("/agents/"));
+export async function listAgents(params = {}) {
+    return unwrapItems(await get("/agents/", { params }));
 }
 
 export async function createAgent(payload) {
@@ -112,8 +112,8 @@ export async function updateProperty(propertyId, payload) {
     return unwrapItem(await patch(`/properties/${propertyId}`, payload));
 }
 
-export async function listProjects() {
-    return unwrapItems(await get("/projects/"));
+export async function listProjects(params = {}) {
+    return unwrapItems(await get("/projects/", { params }));
 }
 
 export async function createProject(payload) {
@@ -132,8 +132,8 @@ export async function updateCommunity(projectId, communityId, payload) {
     return unwrapItem(await patch(`/projects/${projectId}/communities/${communityId}`, payload));
 }
 
-export async function listFloorPlans() {
-    return unwrapItems(await get("/floor_plans/"));
+export async function listFloorPlans(params = {}) {
+    return unwrapItems(await get("/floor_plans/", { params }));
 }
 
 export async function createFloorPlan(payload) {
@@ -173,8 +173,20 @@ export async function importSpreadsheet(file) {
     return unwrapItem(await post("/import_data/excel", formData));
 }
 
-export async function listUsers() {
-    return unwrapItems(await get("/users/"));
+export async function listUsers(params = {}) {
+    return unwrapItems(await get("/users/", { params }));
+}
+
+export async function listPropertyAttributeDefinitions(params = {}) {
+    return unwrapItems(await get("/property_attributes/", { params }));
+}
+
+export async function createPropertyAttributeDefinition(payload) {
+    return unwrapItem(await post("/property_attributes/", payload));
+}
+
+export async function updatePropertyAttributeDefinition(attributeDefinitionId, payload) {
+    return unwrapItem(await patch(`/property_attributes/${attributeDefinitionId}`, payload));
 }
 
 export async function createUser(payload) {

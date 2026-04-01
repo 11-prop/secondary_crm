@@ -2,6 +2,7 @@
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import relationship
 
+from core.property_attributes import LEGACY_PROPERTY_ATTRIBUTE_KEYS
 from configs.settings import Base
 
 class Property(Base):
@@ -31,3 +32,22 @@ class Property(Base):
     community = relationship("Community", back_populates="properties")
     plan = relationship("FloorPlan", back_populates="properties")
     transactions = relationship("Transaction", back_populates="property")
+    attribute_values = relationship("PropertyAttributeValue", back_populates="property", cascade="all, delete-orphan")
+
+    @property
+    def custom_attributes(self):
+        values = {}
+
+        for attribute_value in getattr(self, "attribute_values", []):
+            definition = getattr(attribute_value, "attribute_definition", None)
+            if not definition or not definition.key:
+                continue
+            resolved_value = attribute_value.resolved_value
+            if resolved_value is not None:
+                values[definition.key] = resolved_value
+
+        for key in LEGACY_PROPERTY_ATTRIBUTE_KEYS:
+            if key not in values and bool(getattr(self, key, False)):
+                values[key] = True
+
+        return values

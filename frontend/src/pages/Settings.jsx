@@ -1,22 +1,25 @@
-﻿import { useEffect, useState } from 'react';
-import { CheckCircle2, FileSpreadsheet, KeyRound, Loader2, MapPinned, Pencil, ShieldCheck, Trash2, Upload, X } from 'lucide-react';
+﻿import { useEffect, useMemo, useState } from 'react';
+import { CheckCircle2, FileSpreadsheet, KeyRound, Loader2, MapPinned, Pencil, Search, ShieldCheck, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react';
 
 import Card from '../components/Card';
 import {
     createCommunity,
     createFloorPlan,
     createProject,
+    createPropertyAttributeDefinition,
     createUser,
     deactivateUser,
     getCurrentUser,
     importSpreadsheet,
     listFloorPlans,
     listProjects,
+    listPropertyAttributeDefinitions,
     listUsers,
     updateCommunity,
     updateFloorPlan,
     updateMyPassword,
     updateProject,
+    updatePropertyAttributeDefinition,
     updateUser,
     uploadImage,
 } from '../api/resources';
@@ -25,34 +28,97 @@ import { formatDateLabel } from '../lib/formatters';
 const emptyProjectForm = { project_name: '' };
 const emptyCommunityForm = { project_id: '', community_name: '', file: null, existing_layout_plan_path: null };
 const emptyPlanForm = { project_id: '', community_id: '', plan_name: '', number_of_rooms: '', square_footage: '', amenities: '', file: null, existing_floor_plan_image_path: null };
+const emptyAttributeForm = { label: '', key: '', value_type: 'boolean', options: '', sort_order: '0', is_active: true };
 const emptyUserForm = { full_name: '', email: '', password: '' };
 const emptyPasswordForm = { current_password: '', new_password: '', confirm_password: '' };
 
 export default function Settings() {
     const [activeTab, setActiveTab] = useState('account');
-    const [data, setData] = useState({ projects: [], plans: [], users: [], currentUser: null });
+    const [data, setData] = useState({ projects: [], plans: [], users: [], currentUser: null, attributeDefinitions: [] });
     const [feedback, setFeedback] = useState({ error: '', success: '' });
     const [isUploading, setIsUploading] = useState(false);
     const [importResult, setImportResult] = useState(null);
     const [projectForm, setProjectForm] = useState(emptyProjectForm);
     const [communityForm, setCommunityForm] = useState(emptyCommunityForm);
     const [planForm, setPlanForm] = useState(emptyPlanForm);
+    const [attributeForm, setAttributeForm] = useState(emptyAttributeForm);
     const [userForm, setUserForm] = useState(emptyUserForm);
     const [passwordForm, setPasswordForm] = useState(emptyPasswordForm);
+    const [projectSearch, setProjectSearch] = useState('');
+    const [planSearch, setPlanSearch] = useState('');
+    const [attributeSearch, setAttributeSearch] = useState('');
+    const [userSearch, setUserSearch] = useState('');
     const [savingProject, setSavingProject] = useState(false);
     const [savingCommunity, setSavingCommunity] = useState(false);
     const [savingPlan, setSavingPlan] = useState(false);
+    const [savingAttribute, setSavingAttribute] = useState(false);
     const [savingUser, setSavingUser] = useState(false);
     const [savingPassword, setSavingPassword] = useState(false);
     const [deactivatingUserId, setDeactivatingUserId] = useState(null);
     const [editingProjectId, setEditingProjectId] = useState(null);
     const [editingCommunity, setEditingCommunity] = useState(null);
     const [editingPlanId, setEditingPlanId] = useState(null);
+    const [editingAttributeId, setEditingAttributeId] = useState(null);
     const [editingUserId, setEditingUserId] = useState(null);
 
     useEffect(() => {
         loadSettingsData();
     }, []);
+
+    const editingAttribute = useMemo(
+        () => data.attributeDefinitions.find((definition) => definition.attribute_definition_id === editingAttributeId) || null,
+        [data.attributeDefinitions, editingAttributeId],
+    );
+
+    const isCurrentUserAdmin = !!data.currentUser?.is_admin;
+    const availablePlanCommunities = getProjectCommunities(data.projects, planForm.project_id);
+
+    const filteredProjects = useMemo(() => {
+        const search = projectSearch.trim().toLowerCase();
+        return sortProjects(data.projects).filter((project) => {
+            if (!search) {
+                return true;
+            }
+            const communities = (project.communities || []).map((community) => community.community_name || '').join(' ');
+            return `${project.project_name || ''} ${communities}`.toLowerCase().includes(search);
+        });
+    }, [data.projects, projectSearch]);
+
+    const filteredPlans = useMemo(() => {
+        const search = planSearch.trim().toLowerCase();
+        return sortFloorPlans(data.plans).filter((plan) => {
+            if (!search) {
+                return true;
+            }
+            const projectName = getProjectName(data.projects, plan.project_id);
+            const communityName = getCommunityName(data.projects, plan.project_id, plan.community_id);
+            return `${plan.plan_name || ''} ${projectName} ${communityName} ${plan.amenities || ''} ${plan.number_of_rooms || ''} ${plan.square_footage || ''}`.toLowerCase().includes(search);
+        });
+    }, [data.plans, data.projects, planSearch]);
+
+    const filteredUsers = useMemo(() => {
+        const search = userSearch.trim().toLowerCase();
+        return sortUsers(data.users).filter((user) => {
+            if (!search) {
+                return true;
+            }
+            const role = user.is_admin ? 'administrator' : 'analyst';
+            const status = user.is_active ? 'active' : 'inactive';
+            return `${user.full_name || ''} ${user.email || ''} ${role} ${status}`.toLowerCase().includes(search);
+        });
+    }, [data.users, userSearch]);
+
+    const filteredAttributeDefinitions = useMemo(() => {
+        const search = attributeSearch.trim().toLowerCase();
+        return sortPropertyAttributeDefinitions(data.attributeDefinitions).filter((definition) => {
+            if (!search) {
+                return true;
+            }
+            const options = (definition.options || []).join(' ');
+            const scope = definition.is_system ? 'system' : 'custom';
+            return `${definition.label || ''} ${definition.key || ''} ${definition.value_type || ''} ${scope} ${options}`.toLowerCase().includes(search);
+        });
+    }, [data.attributeDefinitions, attributeSearch]);
 
     function showError(message) {
         setFeedback({ error: message, success: '' });
@@ -63,21 +129,23 @@ export default function Settings() {
     }
 
     async function loadSettingsData() {
-        const [projectsRes, plansRes, usersRes, currentUserRes] = await Promise.allSettled([
-            listProjects(),
-            listFloorPlans(),
-            listUsers(),
+        const [projectsRes, plansRes, usersRes, currentUserRes, attributeDefinitionsRes] = await Promise.allSettled([
+            listProjects({ limit: 500 }),
+            listFloorPlans({ limit: 500 }),
+            listUsers({ limit: 500 }),
             getCurrentUser(),
+            listPropertyAttributeDefinitions({ limit: 500 }),
         ]);
 
         setData({
-            projects: projectsRes.status === 'fulfilled' ? projectsRes.value.items : [],
-            plans: plansRes.status === 'fulfilled' ? plansRes.value.items : [],
-            users: usersRes.status === 'fulfilled' ? usersRes.value.items : [],
+            projects: projectsRes.status === 'fulfilled' ? sortProjects(projectsRes.value.items) : [],
+            plans: plansRes.status === 'fulfilled' ? sortFloorPlans(plansRes.value.items) : [],
+            users: usersRes.status === 'fulfilled' ? sortUsers(usersRes.value.items) : [],
             currentUser: currentUserRes.status === 'fulfilled' ? currentUserRes.value : null,
+            attributeDefinitions: attributeDefinitionsRes.status === 'fulfilled' ? sortPropertyAttributeDefinitions(attributeDefinitionsRes.value.items) : [],
         });
 
-        const firstError = [projectsRes, plansRes, usersRes, currentUserRes].find((result) => result.status === 'rejected');
+        const firstError = [projectsRes, plansRes, usersRes, currentUserRes, attributeDefinitionsRes].find((result) => result.status === 'rejected');
         if (firstError?.status === 'rejected') {
             showError(firstError.reason.message);
         } else {
@@ -99,7 +167,6 @@ export default function Settings() {
             setIsUploading(false);
         }
     }
-
     async function handleSaveProject(event) {
         event.preventDefault();
         setSavingProject(true);
@@ -108,12 +175,12 @@ export default function Settings() {
             if (editingProjectId) {
                 const project = await updateProject(editingProjectId, payload);
                 const hydratedProject = { ...project, communities: project.communities || data.projects.find((item) => item.project_id === project.project_id)?.communities || [] };
-                setData((current) => ({ ...current, projects: current.projects.map((item) => (item.project_id === hydratedProject.project_id ? hydratedProject : item)) }));
+                setData((current) => ({ ...current, projects: sortProjects(current.projects.map((item) => (item.project_id === hydratedProject.project_id ? hydratedProject : item))) }));
                 showSuccess(`Project "${project.project_name}" updated.`);
             } else {
                 const project = await createProject(payload);
                 const hydratedProject = { ...project, communities: project.communities || [] };
-                setData((current) => ({ ...current, projects: [hydratedProject, ...current.projects] }));
+                setData((current) => ({ ...current, projects: sortProjects([hydratedProject, ...current.projects]) }));
                 setCommunityForm((current) => ({ ...current, project_id: String(project.project_id) }));
                 setPlanForm((current) => ({ ...current, project_id: String(project.project_id), community_id: '' }));
                 showSuccess(`Project "${project.project_name}" created. You can now add one or more communities under it.`);
@@ -184,11 +251,11 @@ export default function Settings() {
             };
             if (editingPlanId) {
                 const plan = await updateFloorPlan(editingPlanId, payload);
-                setData((current) => ({ ...current, plans: current.plans.map((item) => (item.plan_id === plan.plan_id ? plan : item)) }));
+                setData((current) => ({ ...current, plans: sortFloorPlans(current.plans.map((item) => (item.plan_id === plan.plan_id ? plan : item))) }));
                 showSuccess(`Floor plan "${plan.plan_name}" updated.`);
             } else {
                 const plan = await createFloorPlan(payload);
-                setData((current) => ({ ...current, plans: [plan, ...current.plans] }));
+                setData((current) => ({ ...current, plans: sortFloorPlans([plan, ...current.plans]) }));
                 showSuccess(`Floor plan "${plan.plan_name}" created.`);
             }
             setPlanForm(emptyPlanForm);
@@ -197,6 +264,51 @@ export default function Settings() {
             showError(error.message);
         } finally {
             setSavingPlan(false);
+        }
+    }
+
+    async function handleSaveAttribute(event) {
+        event.preventDefault();
+        setSavingAttribute(true);
+        try {
+            const payload = {
+                label: attributeForm.label.trim(),
+                key: attributeForm.key.trim() || null,
+                value_type: attributeForm.value_type,
+                options: attributeForm.value_type === 'select' ? parseAttributeOptions(attributeForm.options) : [],
+                sort_order: Number.isFinite(Number(attributeForm.sort_order)) ? Number(attributeForm.sort_order) : 0,
+                is_active: attributeForm.is_active,
+            };
+
+            if (!payload.label) {
+                throw new Error('Attribute label is required.');
+            }
+
+            let definition;
+            if (editingAttributeId) {
+                definition = await updatePropertyAttributeDefinition(editingAttributeId, payload);
+                setData((current) => ({
+                    ...current,
+                    attributeDefinitions: sortPropertyAttributeDefinitions(current.attributeDefinitions.map((item) => (
+                        item.attribute_definition_id === definition.attribute_definition_id ? definition : item
+                    ))),
+                }));
+                showSuccess(`Property attribute "${definition.label}" updated.`);
+            } else {
+                definition = await createPropertyAttributeDefinition(payload);
+                setData((current) => ({
+                    ...current,
+                    attributeDefinitions: sortPropertyAttributeDefinitions([definition, ...current.attributeDefinitions]),
+                }));
+                showSuccess(`Property attribute "${definition.label}" created.`);
+            }
+
+            setAttributeForm(emptyAttributeForm);
+            setEditingAttributeId(null);
+        } catch (error) {
+            showError(error.message);
+        } finally {
+            setSavingAttribute(false);
         }
     }
 
@@ -229,6 +341,23 @@ export default function Settings() {
         });
     }
 
+    function startEditingAttribute(definition) {
+        setEditingAttributeId(definition.attribute_definition_id);
+        setAttributeForm({
+            label: definition.label || '',
+            key: definition.key || '',
+            value_type: definition.value_type || 'boolean',
+            options: (definition.options || []).join(', '),
+            sort_order: String(definition.sort_order ?? 0),
+            is_active: !!definition.is_active,
+        });
+    }
+
+    function resetAttributeEditor() {
+        setEditingAttributeId(null);
+        setAttributeForm(emptyAttributeForm);
+    }
+
     async function handleSaveUser(event) {
         event.preventDefault();
         setSavingUser(true);
@@ -246,14 +375,14 @@ export default function Settings() {
                 const user = await updateUser(editingUserId, payload);
                 setData((current) => ({
                     ...current,
-                    users: current.users.map((item) => (item.user_id === user.user_id ? user : item)),
+                    users: sortUsers(current.users.map((item) => (item.user_id === user.user_id ? user : item))),
                     currentUser: current.currentUser?.user_id === user.user_id ? user : current.currentUser,
                 }));
                 showSuccess(`Analyst "${user.full_name || user.email}" updated.`);
             } else {
                 const payload = { ...userForm, is_admin: true, is_active: true };
                 const user = await createUser(payload);
-                setData((current) => ({ ...current, users: [user, ...current.users] }));
+                setData((current) => ({ ...current, users: sortUsers([user, ...current.users]) }));
                 showSuccess(`Analyst "${user.full_name || user.email}" added.`);
             }
             setUserForm(emptyUserForm);
@@ -303,7 +432,7 @@ export default function Settings() {
             const updatedUser = await deactivateUser(user.user_id);
             setData((current) => ({
                 ...current,
-                users: current.users.map((item) => (item.user_id === updatedUser.user_id ? updatedUser : item)),
+                users: sortUsers(current.users.map((item) => (item.user_id === updatedUser.user_id ? updatedUser : item))),
             }));
             showSuccess(`"${updatedUser.full_name || updatedUser.email}" was deactivated.`);
         } catch (error) {
@@ -321,10 +450,6 @@ export default function Settings() {
             password: '',
         });
     }
-
-    const isCurrentUserAdmin = !!data.currentUser?.is_admin;
-    const availablePlanCommunities = getProjectCommunities(data.projects, planForm.project_id);
-
     return (
         <div className="space-y-8">
             <div>
@@ -426,131 +551,218 @@ export default function Settings() {
             )}
 
             {activeTab === 'assets' && (
-                <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 xl:grid-cols-3">
-                    <Card title={editingProjectId ? 'Edit Project' : 'Add New Project'} subtitle={editingProjectId ? 'Rename the project if it was created with incomplete details.' : 'Create the top-level development that will contain multiple communities.'}>
-                        <form className="space-y-4" onSubmit={handleSaveProject}>
-                            <input type="text" required placeholder="Project Name" value={projectForm.project_name} onChange={(event) => setProjectForm((current) => ({ ...current, project_name: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
-                            <div className="flex items-center gap-3">
-                                <button type="submit" disabled={savingProject} className="flex-1 rounded-xl bg-gray-900 py-3 text-sm font-bold text-white shadow-xl disabled:opacity-60">{savingProject ? 'Saving project...' : editingProjectId ? 'Save Project' : 'Create Project'}</button>
-                                {editingProjectId && <button type="button" onClick={() => { setEditingProjectId(null); setProjectForm(emptyProjectForm); }} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-bold text-gray-600"><X className="h-4 w-4" />Cancel</button>}
-                            </div>
-                        </form>
-                    </Card>
+                <div className="space-y-8">
+                    <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+                        <Card title={editingProjectId ? 'Edit Project' : 'Add New Project'} subtitle={editingProjectId ? 'Rename the project if it was created with incomplete details.' : 'Create the top-level development that will contain multiple communities.'}>
+                            <form className="space-y-4" onSubmit={handleSaveProject}>
+                                <input type="text" required placeholder="Project Name" value={projectForm.project_name} onChange={(event) => setProjectForm((current) => ({ ...current, project_name: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                                <div className="flex items-center gap-3">
+                                    <button type="submit" disabled={savingProject} className="flex-1 rounded-xl bg-gray-900 py-3 text-sm font-bold text-white shadow-xl disabled:opacity-60">{savingProject ? 'Saving project...' : editingProjectId ? 'Save Project' : 'Create Project'}</button>
+                                    {editingProjectId && <button type="button" onClick={() => { setEditingProjectId(null); setProjectForm(emptyProjectForm); }} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-bold text-gray-600"><X className="h-4 w-4" />Cancel</button>}
+                                </div>
+                            </form>
+                        </Card>
 
-                    <Card title={editingCommunity ? 'Edit Community' : 'Add Community'} subtitle={editingCommunity ? 'Update the community name or replace its layout asset.' : 'A single project can own multiple communities or clusters, each with its own layout asset.'}>
-                        <form className="space-y-4" onSubmit={handleSaveCommunity}>
-                            <select required value={communityForm.project_id} onChange={(event) => setCommunityForm((current) => ({ ...current, project_id: event.target.value }))} disabled={!!editingCommunity} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none disabled:opacity-50"><option value="">Select Project...</option>{data.projects.map((project) => <option key={project.project_id} value={project.project_id}>{project.project_name}</option>)}</select>
-                            <input type="text" required placeholder="Community Name" value={communityForm.community_name} onChange={(event) => setCommunityForm((current) => ({ ...current, community_name: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
-                            <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-gray-200 p-4 text-sm font-semibold text-gray-600"><Upload className="h-4 w-4 text-brand-600" />Upload community layout asset (image or PDF, up to 20 MB)<input type="file" accept="image/*,.pdf,application/pdf" className="hidden" onChange={(event) => setCommunityForm((current) => ({ ...current, file: event.target.files?.[0] || null }))} /></label>
-                            <div className="flex items-center gap-3">
-                                <button type="submit" disabled={savingCommunity || data.projects.length === 0} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand-600 py-3 text-sm font-bold text-white shadow-lg shadow-brand-500/20 disabled:opacity-60"><MapPinned className="h-4 w-4" />{savingCommunity ? 'Saving community...' : editingCommunity ? 'Save Community' : 'Add Community'}</button>
-                                {editingCommunity && <button type="button" onClick={() => { setEditingCommunity(null); setCommunityForm(emptyCommunityForm); }} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-bold text-gray-600"><X className="h-4 w-4" />Cancel</button>}
-                            </div>
-                            {data.projects.length === 0 && <p className="text-sm font-medium text-gray-500">Create a project first, then add its communities here.</p>}
-                        </form>
-                    </Card>
+                        <Card title={editingCommunity ? 'Edit Community' : 'Add Community'} subtitle={editingCommunity ? 'Update the community name or replace its layout asset.' : 'A single project can own multiple communities or clusters, each with its own layout asset.'}>
+                            <form className="space-y-4" onSubmit={handleSaveCommunity}>
+                                <select required value={communityForm.project_id} onChange={(event) => setCommunityForm((current) => ({ ...current, project_id: event.target.value }))} disabled={!!editingCommunity} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none disabled:opacity-50"><option value="">Select Project...</option>{data.projects.map((project) => <option key={project.project_id} value={project.project_id}>{project.project_name}</option>)}</select>
+                                <input type="text" required placeholder="Community Name" value={communityForm.community_name} onChange={(event) => setCommunityForm((current) => ({ ...current, community_name: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                                <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-gray-200 p-4 text-sm font-semibold text-gray-600"><Upload className="h-4 w-4 text-brand-600" />Upload community layout asset (image or PDF, up to 20 MB)<input type="file" accept="image/*,.pdf,application/pdf" className="hidden" onChange={(event) => setCommunityForm((current) => ({ ...current, file: event.target.files?.[0] || null }))} /></label>
+                                <div className="flex items-center gap-3">
+                                    <button type="submit" disabled={savingCommunity || data.projects.length === 0} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand-600 py-3 text-sm font-bold text-white shadow-lg shadow-brand-500/20 disabled:opacity-60"><MapPinned className="h-4 w-4" />{savingCommunity ? 'Saving community...' : editingCommunity ? 'Save Community' : 'Add Community'}</button>
+                                    {editingCommunity && <button type="button" onClick={() => { setEditingCommunity(null); setCommunityForm(emptyCommunityForm); }} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-bold text-gray-600"><X className="h-4 w-4" />Cancel</button>}
+                                </div>
+                                {data.projects.length === 0 && <p className="text-sm font-medium text-gray-500">Create a project first, then add its communities here.</p>}
+                            </form>
+                        </Card>
 
-                    <Card title={editingPlanId ? 'Edit Floor Plan' : 'Add Floor Plan'} subtitle={editingPlanId ? 'Finish or correct the plan details without creating a duplicate record.' : 'Attach a plan to a whole project or narrow it to one community.'}>
-                        <form className="space-y-4" onSubmit={handleSavePlan}>
-                            <select required value={planForm.project_id} onChange={(event) => setPlanForm((current) => ({ ...current, project_id: event.target.value, community_id: '' }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option value="">Select Project...</option>{data.projects.map((project) => <option key={project.project_id} value={project.project_id}>{project.project_name}</option>)}</select>
-                            <select value={planForm.community_id} onChange={(event) => setPlanForm((current) => ({ ...current, community_id: event.target.value }))} disabled={!planForm.project_id} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none disabled:opacity-50"><option value="">All communities in this project</option>{availablePlanCommunities.map((community) => <option key={community.community_id} value={community.community_id}>{community.community_name}</option>)}</select>
-                            <input type="text" required placeholder="Plan Name" value={planForm.plan_name} onChange={(event) => setPlanForm((current) => ({ ...current, plan_name: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
-                            <div className="grid grid-cols-2 gap-4">
-                                <input type="number" placeholder="Rooms" value={planForm.number_of_rooms} onChange={(event) => setPlanForm((current) => ({ ...current, number_of_rooms: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
-                                <input type="number" placeholder="Square footage" value={planForm.square_footage} onChange={(event) => setPlanForm((current) => ({ ...current, square_footage: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
-                            </div>
-                            <textarea rows={3} placeholder="Amenities" value={planForm.amenities} onChange={(event) => setPlanForm((current) => ({ ...current, amenities: event.target.value }))} className="w-full rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm outline-none" />
-                            <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-gray-200 p-4 text-sm font-semibold text-gray-600"><Upload className="h-4 w-4 text-brand-600" />Upload floor plan asset (image or PDF, up to 20 MB)<input type="file" accept="image/*,.pdf,application/pdf" className="hidden" onChange={(event) => setPlanForm((current) => ({ ...current, file: event.target.files?.[0] || null }))} /></label>
-                            <div className="flex items-center gap-3">
-                                <button type="submit" disabled={savingPlan} className="flex-1 rounded-xl bg-gray-900 py-3 text-sm font-bold text-white shadow-xl disabled:opacity-60">{savingPlan ? 'Saving floor plan...' : editingPlanId ? 'Save Floor Plan' : 'Create Floor Plan'}</button>
-                                {editingPlanId && <button type="button" onClick={() => { setEditingPlanId(null); setPlanForm(emptyPlanForm); }} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-bold text-gray-600"><X className="h-4 w-4" />Cancel</button>}
-                            </div>
-                        </form>
-                    </Card>
+                        <Card title={editingPlanId ? 'Edit Floor Plan' : 'Add Floor Plan'} subtitle={editingPlanId ? 'Finish or correct the plan details without creating a duplicate record.' : 'Attach a plan to a whole project or narrow it to one community.'}>
+                            <form className="space-y-4" onSubmit={handleSavePlan}>
+                                <select required value={planForm.project_id} onChange={(event) => setPlanForm((current) => ({ ...current, project_id: event.target.value, community_id: '' }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option value="">Select Project...</option>{data.projects.map((project) => <option key={project.project_id} value={project.project_id}>{project.project_name}</option>)}</select>
+                                <select value={planForm.community_id} onChange={(event) => setPlanForm((current) => ({ ...current, community_id: event.target.value }))} disabled={!planForm.project_id} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none disabled:opacity-50"><option value="">All communities in this project</option>{availablePlanCommunities.map((community) => <option key={community.community_id} value={community.community_id}>{community.community_name}</option>)}</select>
+                                <input type="text" required placeholder="Plan Name" value={planForm.plan_name} onChange={(event) => setPlanForm((current) => ({ ...current, plan_name: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <input type="number" placeholder="Rooms" value={planForm.number_of_rooms} onChange={(event) => setPlanForm((current) => ({ ...current, number_of_rooms: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                                    <input type="number" placeholder="Square footage" value={planForm.square_footage} onChange={(event) => setPlanForm((current) => ({ ...current, square_footage: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                                </div>
+                                <textarea rows={3} placeholder="Amenities" value={planForm.amenities} onChange={(event) => setPlanForm((current) => ({ ...current, amenities: event.target.value }))} className="w-full rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm outline-none" />
+                                <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-gray-200 p-4 text-sm font-semibold text-gray-600"><Upload className="h-4 w-4 text-brand-600" />Upload floor plan asset (image or PDF, up to 20 MB)<input type="file" accept="image/*,.pdf,application/pdf" className="hidden" onChange={(event) => setPlanForm((current) => ({ ...current, file: event.target.files?.[0] || null }))} /></label>
+                                <div className="flex items-center gap-3">
+                                    <button type="submit" disabled={savingPlan} className="flex-1 rounded-xl bg-gray-900 py-3 text-sm font-bold text-white shadow-xl disabled:opacity-60">{savingPlan ? 'Saving floor plan...' : editingPlanId ? 'Save Floor Plan' : 'Create Floor Plan'}</button>
+                                    {editingPlanId && <button type="button" onClick={() => { setEditingPlanId(null); setPlanForm(emptyPlanForm); }} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-bold text-gray-600"><X className="h-4 w-4" />Cancel</button>}
+                                </div>
+                            </form>
+                        </Card>
 
-                    <Card title="Projects" subtitle="Each project can now hold multiple communities, and every record can be reopened for edits.">
-                        <div className="space-y-3">
-                            {data.projects.length === 0 ? (
-                                <p className="text-sm font-medium text-gray-500">No projects have been created yet.</p>
-                            ) : data.projects.map((project) => (
-                                <div key={project.project_id} className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
-                                    <div className="flex items-start justify-between gap-4">
-                                        <div>
-                                            <p className="font-bold text-gray-900">{project.project_name}</p>
-                                            <p className="mt-1 text-sm text-gray-500">{(project.communities || []).length} communities linked</p>
+                        <Card title={editingAttributeId ? 'Edit Property Attribute' : 'Add Property Attribute'} subtitle={editingAttributeId ? 'Adjust the configurable flag without touching fixed property identity fields.' : 'Create the flexible flags and values that appear in property forms.'}>
+                            <form className="space-y-4" onSubmit={handleSaveAttribute}>
+                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    <input type="text" required placeholder="Label" value={attributeForm.label} onChange={(event) => setAttributeForm((current) => ({ ...current, label: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                                    <input type="text" placeholder="Key (optional)" value={attributeForm.key} onChange={(event) => setAttributeForm((current) => ({ ...current, key: event.target.value }))} disabled={!!editingAttribute?.is_system} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none disabled:opacity-50" />
+                                    <select value={attributeForm.value_type} onChange={(event) => setAttributeForm((current) => ({ ...current, value_type: event.target.value, options: event.target.value === 'select' ? current.options : '' }))} disabled={!!editingAttribute?.is_system} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none disabled:opacity-50">
+                                        <option value="boolean">Boolean flag</option>
+                                        <option value="text">Text</option>
+                                        <option value="number">Number</option>
+                                        <option value="select">Select list</option>
+                                    </select>
+                                    <input type="number" placeholder="Display order" value={attributeForm.sort_order} onChange={(event) => setAttributeForm((current) => ({ ...current, sort_order: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                                </div>
+
+                                {attributeForm.value_type === 'select' && (
+                                    <textarea rows={3} placeholder="Options, separated by commas or new lines" value={attributeForm.options} onChange={(event) => setAttributeForm((current) => ({ ...current, options: event.target.value }))} className="w-full rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm outline-none" />
+                                )}
+
+                                <label className="inline-flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-700">
+                                    <input type="checkbox" checked={attributeForm.is_active} onChange={(event) => setAttributeForm((current) => ({ ...current, is_active: event.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
+                                    Show this attribute in active property forms
+                                </label>
+
+                                <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 text-sm font-medium text-gray-600">
+                                    {editingAttribute?.is_system
+                                        ? 'This is a system-backed attribute migrated from the old fixed-flag model. Its key and value type stay locked so existing data remains stable.'
+                                        : 'Use boolean flags for simple yes or no fields, or use text, number, and select when a property needs richer metadata.'}
+                                </div>
+
+                                <div className="flex items-center gap-3">
+                                    <button type="submit" disabled={savingAttribute} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-gray-900 py-3 text-sm font-bold text-white shadow-xl disabled:opacity-60"><SlidersHorizontal className="h-4 w-4" />{savingAttribute ? 'Saving attribute...' : editingAttributeId ? 'Save Attribute' : 'Create Attribute'}</button>
+                                    {editingAttributeId && <button type="button" onClick={resetAttributeEditor} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-bold text-gray-600"><X className="h-4 w-4" />Cancel</button>}
+                                </div>
+                            </form>
+                        </Card>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-8 xl:grid-cols-3">
+                        <Card title="Projects" subtitle="Each project can hold multiple communities, and search now scales better as the directory grows.">
+                            <div className="flex h-[30rem] flex-col">
+                                <SearchInput value={projectSearch} onChange={setProjectSearch} placeholder="Search projects or communities..." />
+                                <p className="mt-3 text-xs font-semibold text-gray-500">Showing {filteredProjects.length} of {data.projects.length} projects.</p>
+                                <div className="mt-4 flex-1 space-y-3 overflow-y-auto pr-1">
+                                    {filteredProjects.length === 0 ? (
+                                        <p className="text-sm font-medium text-gray-500">{data.projects.length === 0 ? 'No projects have been created yet.' : 'No projects match this search.'}</p>
+                                    ) : filteredProjects.map((project) => (
+                                        <div key={project.project_id} className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
+                                            <div className="flex items-start justify-between gap-4">
+                                                <div>
+                                                    <p className="font-bold text-gray-900">{project.project_name}</p>
+                                                    <p className="mt-1 text-sm text-gray-500">{(project.communities || []).length} communities linked</p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => startEditingProject(project)}
+                                                    className="inline-flex items-center gap-1 text-sm font-bold text-brand-600 hover:text-brand-800"
+                                                >
+                                                    <Pencil className="h-4 w-4" />
+                                                    Edit
+                                                </button>
+                                            </div>
+
+                                            <div className="mt-3 space-y-2">
+                                                {(project.communities || []).length === 0 ? (
+                                                    <span className="inline-flex rounded-full bg-white px-3 py-1 text-xs font-bold text-gray-400 ring-1 ring-gray-200">No communities yet</span>
+                                                ) : (project.communities || []).map((community) => (
+                                                    <div key={community.community_id} className="rounded-xl bg-white px-3 py-3 ring-1 ring-gray-200">
+                                                        <div className="flex items-start justify-between gap-4">
+                                                            <div>
+                                                                <span className="text-sm font-bold text-gray-800">{community.community_name}</span>
+                                                                <p className={`mt-1 text-xs font-bold ${community.layout_plan_path ? 'text-emerald-600' : 'text-gray-400'}`}>
+                                                                    {community.layout_plan_path ? 'Layout uploaded' : 'No layout yet'}
+                                                                </p>
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => startEditingCommunity(project.project_id, community)}
+                                                                className="inline-flex items-center gap-1 text-xs font-bold text-brand-600 hover:text-brand-800"
+                                                            >
+                                                                <Pencil className="h-3.5 w-3.5" />
+                                                                Edit
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => startEditingProject(project)}
-                                            className="inline-flex items-center gap-1 text-sm font-bold text-brand-600 hover:text-brand-800"
-                                        >
-                                            <Pencil className="h-4 w-4" />
-                                            Edit
-                                        </button>
-                                    </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </Card>
 
-                                    <div className="mt-3 space-y-2">
-                                        {(project.communities || []).length === 0 ? (
-                                            <span className="inline-flex rounded-full bg-white px-3 py-1 text-xs font-bold text-gray-400 ring-1 ring-gray-200">No communities yet</span>
-                                        ) : (project.communities || []).map((community) => (
-                                            <div key={community.community_id} className="rounded-xl bg-white px-3 py-3 ring-1 ring-gray-200">
+                        <Card title="Floor Plans" subtitle="The card stays fixed while the plan list scrolls, so long inventories stay easy to scan.">
+                            <div className="flex h-[30rem] flex-col">
+                                <SearchInput value={planSearch} onChange={setPlanSearch} placeholder="Search plans, projects, or communities..." />
+                                <p className="mt-3 text-xs font-semibold text-gray-500">Showing {filteredPlans.length} of {data.plans.length} floor plans.</p>
+                                <div className="mt-4 flex-1 space-y-3 overflow-y-auto pr-1">
+                                    {filteredPlans.length === 0 ? (
+                                        <p className="text-sm font-medium text-gray-500">{data.plans.length === 0 ? 'No floor plans have been created yet.' : 'No floor plans match this search.'}</p>
+                                    ) : filteredPlans.map((plan) => {
+                                        const communityName = getCommunityName(data.projects, plan.project_id, plan.community_id);
+
+                                        return (
+                                            <div key={plan.plan_id} className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
                                                 <div className="flex items-start justify-between gap-4">
-                                                    <div>
-                                                        <span className="text-sm font-bold text-gray-800">{community.community_name}</span>
-                                                        <p className={`mt-1 text-xs font-bold ${community.layout_plan_path ? 'text-emerald-600' : 'text-gray-400'}`}>
-                                                            {community.layout_plan_path ? 'Layout uploaded' : 'No layout yet'}
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="font-bold text-gray-900">{plan.plan_name}</p>
+                                                        <p className="mt-1 text-sm text-gray-500">
+                                                            {getProjectName(data.projects, plan.project_id)}
+                                                            {' - '}
+                                                            {communityName || 'All communities'}
                                                         </p>
+                                                        <p className="mt-1 text-sm text-gray-500">{plan.number_of_rooms || 'N/A'} rooms - {plan.square_footage || 'N/A'} sqft</p>
+                                                        <p className="mt-2 line-clamp-2 text-xs font-medium text-gray-500">{plan.amenities || 'No amenities listed yet.'}</p>
                                                     </div>
                                                     <button
                                                         type="button"
-                                                        onClick={() => startEditingCommunity(project.project_id, community)}
-                                                        className="inline-flex items-center gap-1 text-xs font-bold text-brand-600 hover:text-brand-800"
+                                                        onClick={() => startEditingPlan(plan)}
+                                                        className="inline-flex items-center gap-1 text-sm font-bold text-brand-600 hover:text-brand-800"
                                                     >
-                                                        <Pencil className="h-3.5 w-3.5" />
+                                                        <Pencil className="h-4 w-4" />
                                                         Edit
                                                     </button>
                                                 </div>
                                             </div>
-                                        ))}
-                                    </div>
+                                        );
+                                    })}
                                 </div>
-                            ))}
-                        </div>
-                    </Card>
+                            </div>
+                        </Card>
 
-                    <Card title="Floor Plans" subtitle="Plans can be project-wide or targeted to a specific community, and every saved record can be reopened.">
-                        <div className="space-y-3">
-                            {data.plans.length === 0 ? (
-                                <p className="text-sm font-medium text-gray-500">No floor plans have been created yet.</p>
-                            ) : data.plans.map((plan) => {
-                                const communityName = getCommunityName(data.projects, plan.project_id, plan.community_id);
-
-                                return (
-                                    <div key={plan.plan_id} className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
-                                        <div className="flex items-start justify-between gap-4">
-                                            <div>
-                                                <p className="font-bold text-gray-900">{plan.plan_name}</p>
-                                                <p className="mt-1 text-sm text-gray-500">
-                                                    {getProjectName(data.projects, plan.project_id)}
-                                                    {' - '}
-                                                    {communityName || 'All communities'}
-                                                </p>
-                                                <p className="mt-1 text-sm text-gray-500">{plan.number_of_rooms || 'N/A'} rooms - {plan.square_footage || 'N/A'} sqft</p>
+                        <Card title="Property Attributes" subtitle="Core property identity stays fixed in the schema; this list controls the configurable flags and custom values.">
+                            <div className="flex h-[30rem] flex-col">
+                                <SearchInput value={attributeSearch} onChange={setAttributeSearch} placeholder="Search labels, keys, types, or options..." />
+                                <p className="mt-3 text-xs font-semibold text-gray-500">Showing {filteredAttributeDefinitions.length} of {data.attributeDefinitions.length} attributes.</p>
+                                <div className="mt-4 flex-1 space-y-3 overflow-y-auto pr-1">
+                                    {filteredAttributeDefinitions.length === 0 ? (
+                                        <p className="text-sm font-medium text-gray-500">{data.attributeDefinitions.length === 0 ? 'No configurable attributes have been created yet.' : 'No property attributes match this search.'}</p>
+                                    ) : filteredAttributeDefinitions.map((definition) => (
+                                        <div key={definition.attribute_definition_id} className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
+                                            <div className="flex items-start justify-between gap-4">
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <p className="font-bold text-gray-900">{definition.label}</p>
+                                                        <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.2em] ${definition.is_system ? 'bg-sky-50 text-sky-700 ring-1 ring-sky-100' : 'bg-brand-50 text-brand-700 ring-1 ring-brand-100'}`}>{definition.is_system ? 'System' : 'Custom'}</span>
+                                                        <span className="inline-flex rounded-full bg-white px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-gray-600 ring-1 ring-gray-200">{definition.value_type}</span>
+                                                        {!definition.is_active && <span className="inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">Inactive</span>}
+                                                    </div>
+                                                    <p className="mt-1 text-xs font-medium text-gray-500">{definition.key}</p>
+                                                    {definition.value_type === 'select' && definition.options?.length > 0 && (
+                                                        <p className="mt-2 text-xs font-medium text-gray-500">Options: {definition.options.join(', ')}</p>
+                                                    )}
+                                                    <p className="mt-2 text-xs font-medium text-gray-400">Sort order {definition.sort_order} • Created {formatDateLabel(definition.created_at)}</p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => startEditingAttribute(definition)}
+                                                    className="inline-flex items-center gap-1 text-sm font-bold text-brand-600 hover:text-brand-800"
+                                                >
+                                                    <Pencil className="h-4 w-4" />
+                                                    Edit
+                                                </button>
                                             </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => startEditingPlan(plan)}
-                                                className="inline-flex items-center gap-1 text-sm font-bold text-brand-600 hover:text-brand-800"
-                                            >
-                                                <Pencil className="h-4 w-4" />
-                                                Edit
-                                            </button>
                                         </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </Card>
+                                    ))}
+                                </div>
+                            </div>
+                        </Card>
+                    </div>
                 </div>
             )}
 
@@ -570,44 +782,65 @@ export default function Settings() {
                                 {editingUserId && <button type="button" onClick={() => { setEditingUserId(null); setUserForm(emptyUserForm); }} className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-bold text-gray-600"><X className="h-4 w-4" />Cancel</button>}
                             </form>
 
-                            <div className="mt-6 overflow-hidden rounded-2xl border border-gray-100">
-                                <table className="w-full text-left text-sm">
-                                    <thead className="bg-gray-50 border-b border-gray-100"><tr><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Name</th><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Email</th><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Role</th><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Status</th><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Created</th><th className="px-6 py-3 text-right text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Actions</th></tr></thead>
-                                    <tbody className="divide-y divide-gray-100 bg-white">
-                                        {data.users.length === 0 ? (
-                                            <tr><td className="px-6 py-6 text-sm font-medium text-gray-500" colSpan={6}>No user accounts have been created yet.</td></tr>
-                                        ) : data.users.map((user) => {
-                                            const isCurrentUser = user.user_id === data.currentUser?.user_id;
+                            <div className="mt-6 space-y-4">
+                                <SearchInput value={userSearch} onChange={setUserSearch} placeholder="Search analysts, emails, roles, or status..." />
+                                <p className="text-xs font-semibold text-gray-500">Showing {filteredUsers.length} of {data.users.length} users.</p>
+                                <div className="overflow-hidden rounded-2xl border border-gray-100">
+                                    <div className="max-h-[30rem] overflow-auto">
+                                        <table className="w-full text-left text-sm">
+                                            <thead className="sticky top-0 z-10 border-b border-gray-100 bg-gray-50"><tr><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Name</th><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Email</th><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Role</th><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Status</th><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Created</th><th className="px-6 py-3 text-right text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Actions</th></tr></thead>
+                                            <tbody className="divide-y divide-gray-100 bg-white">
+                                                {filteredUsers.length === 0 ? (
+                                                    <tr><td className="px-6 py-6 text-sm font-medium text-gray-500" colSpan={6}>{data.users.length === 0 ? 'No user accounts have been created yet.' : 'No users match this search.'}</td></tr>
+                                                ) : filteredUsers.map((user) => {
+                                                    const isCurrentUser = user.user_id === data.currentUser?.user_id;
 
-                                            return (
-                                                <tr key={user.user_id}>
-                                                    <td className="px-6 py-4 font-bold text-gray-900">{user.full_name || 'Unnamed user'}</td>
-                                                    <td className="px-6 py-4 font-medium text-gray-500">{user.email}</td>
-                                                    <td className="px-6 py-4"><span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${user.is_admin ? 'bg-sky-50 text-sky-700 ring-1 ring-sky-100' : 'bg-slate-100 text-slate-700 ring-1 ring-slate-200'}`}><ShieldCheck className="h-3.5 w-3.5" />{user.is_admin ? 'Administrator' : 'Analyst'}</span></td>
-                                                    <td className="px-6 py-4"><span className={`rounded-md px-2 py-0.5 text-[10px] font-black uppercase ${user.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 text-gray-500'}`}>{user.is_active ? 'Active' : 'Inactive'}</span></td>
-                                                    <td className="px-6 py-4 font-medium text-gray-500">{formatDateLabel(user.created_at)}</td>
-                                                    <td className="px-6 py-4 text-right">
-                                                        <div className="flex items-center justify-end gap-3">
-                                                            <button type="button" onClick={() => startEditingUser(user)} className="inline-flex items-center gap-1 text-xs font-bold text-brand-600 hover:text-brand-800"><Pencil className="h-3.5 w-3.5" />Edit</button>
-                                                            {isCurrentUser ? (
-                                                                <span className="text-xs font-black uppercase tracking-[0.2em] text-gray-400">Current user</span>
-                                                            ) : user.is_active ? (
-                                                                <button type="button" disabled={deactivatingUserId === user.user_id} onClick={() => handleDeactivateUser(user)} className="inline-flex items-center gap-2 rounded-xl border border-red-200 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50 disabled:opacity-60"><Trash2 className="h-3.5 w-3.5" />{deactivatingUserId === user.user_id ? 'Deactivating...' : 'Deactivate'}</button>
-                                                            ) : (
-                                                                <span className="text-xs font-black uppercase tracking-[0.2em] text-gray-400">Soft deleted</span>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
+                                                    return (
+                                                        <tr key={user.user_id}>
+                                                            <td className="px-6 py-4 font-bold text-gray-900">{user.full_name || 'Unnamed user'}</td>
+                                                            <td className="px-6 py-4 font-medium text-gray-500">{user.email}</td>
+                                                            <td className="px-6 py-4"><span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${user.is_admin ? 'bg-sky-50 text-sky-700 ring-1 ring-sky-100' : 'bg-slate-100 text-slate-700 ring-1 ring-slate-200'}`}><ShieldCheck className="h-3.5 w-3.5" />{user.is_admin ? 'Administrator' : 'Analyst'}</span></td>
+                                                            <td className="px-6 py-4"><span className={`rounded-md px-2 py-0.5 text-[10px] font-black uppercase ${user.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 text-gray-500'}`}>{user.is_active ? 'Active' : 'Inactive'}</span></td>
+                                                            <td className="px-6 py-4 font-medium text-gray-500">{formatDateLabel(user.created_at)}</td>
+                                                            <td className="px-6 py-4 text-right">
+                                                                <div className="flex items-center justify-end gap-3">
+                                                                    <button type="button" onClick={() => startEditingUser(user)} className="inline-flex items-center gap-1 text-xs font-bold text-brand-600 hover:text-brand-800"><Pencil className="h-3.5 w-3.5" />Edit</button>
+                                                                    {isCurrentUser ? (
+                                                                        <span className="text-xs font-black uppercase tracking-[0.2em] text-gray-400">Current user</span>
+                                                                    ) : user.is_active ? (
+                                                                        <button type="button" disabled={deactivatingUserId === user.user_id} onClick={() => handleDeactivateUser(user)} className="inline-flex items-center gap-2 rounded-xl border border-red-200 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50 disabled:opacity-60"><Trash2 className="h-3.5 w-3.5" />{deactivatingUserId === user.user_id ? 'Deactivating...' : 'Deactivate'}</button>
+                                                                    ) : (
+                                                                        <span className="text-xs font-black uppercase tracking-[0.2em] text-gray-400">Soft deleted</span>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
                             </div>
                         </>
                     )}
                 </Card>
             )}
+        </div>
+    );
+}
+
+function SearchInput({ value, onChange, placeholder }) {
+    return (
+        <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+                type="text"
+                value={value}
+                onChange={(event) => onChange(event.target.value)}
+                placeholder={placeholder}
+                className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-4 text-sm outline-none"
+            />
         </div>
     );
 }
@@ -635,4 +868,50 @@ function getCommunityName(projects, projectId, communityId) {
     }
 
     return getProjectCommunities(projects, projectId).find((community) => community.community_id === communityId)?.community_name || '';
+}
+
+function sortProjects(projects) {
+    return [...projects].sort((left, right) => (left.project_name || '').localeCompare(right.project_name || ''));
+}
+
+function sortFloorPlans(plans) {
+    return [...plans].sort((left, right) => (left.plan_name || '').localeCompare(right.plan_name || ''));
+}
+
+function sortUsers(users) {
+    return [...users].sort((left, right) => {
+        if (left.is_active !== right.is_active) {
+            return left.is_active ? -1 : 1;
+        }
+        return (left.full_name || left.email || '').localeCompare(right.full_name || right.email || '');
+    });
+}
+
+function sortPropertyAttributeDefinitions(definitions) {
+    return [...definitions].sort((left, right) => {
+        if ((left.sort_order ?? 0) !== (right.sort_order ?? 0)) {
+            return (left.sort_order ?? 0) - (right.sort_order ?? 0);
+        }
+        return (left.label || '').localeCompare(right.label || '');
+    });
+}
+
+function parseAttributeOptions(value) {
+    const normalized = [];
+    const seen = new Set();
+
+    for (const option of String(value || '').split(/[\n,]/)) {
+        const trimmed = option.trim();
+        if (!trimmed) {
+            continue;
+        }
+        const lowered = trimmed.toLowerCase();
+        if (seen.has(lowered)) {
+            continue;
+        }
+        normalized.push(trimmed);
+        seen.add(lowered);
+    }
+
+    return normalized;
 }

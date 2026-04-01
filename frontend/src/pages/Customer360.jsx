@@ -13,22 +13,21 @@ import {
     listNotesByCustomer,
     listProjects,
     listProperties,
+    listPropertyAttributeDefinitions,
     listTransactionsByProperty,
     resolveAssetUrl,
     updateCustomer,
 } from '../api/resources';
-import { formatCurrency, formatCustomerName, formatDateLabel, getPropertyAttributeTags, getPropertyStatusClasses } from '../lib/formatters';
-
-const emptyPropertyForm = { villa_number: '', project_id: '', community_id: '', plan_id: '', property_status: 'Off-Market', is_corner: false, is_lake_front: false, is_park_front: false, is_beach: false, is_market: false };
+import { formatCurrency, formatCustomerName, formatDateLabel, getPropertyStatusClasses } from '../lib/formatters';
 
 export default function Customer360() {
     const { id } = useParams();
     const customerId = Number(id);
-    const [data, setData] = useState({ customer: null, agents: [], notes: [], properties: [], projects: [], plans: [], tx: {}, isLoading: true, error: '' });
+    const [data, setData] = useState({ customer: null, agents: [], notes: [], properties: [], projects: [], plans: [], attributeDefinitions: [], tx: {}, isLoading: true, error: '' });
     const [assignments, setAssignments] = useState({ buyer: '', seller: '' });
     const [noteText, setNoteText] = useState('');
     const [noteAgentId, setNoteAgentId] = useState('');
-    const [propertyForm, setPropertyForm] = useState(emptyPropertyForm);
+    const [propertyForm, setPropertyForm] = useState(createEmptyPropertyForm([]));
     const [showPropertyForm, setShowPropertyForm] = useState(false);
     const [savingAssignments, setSavingAssignments] = useState(false);
     const [savingNote, setSavingNote] = useState(false);
@@ -41,20 +40,33 @@ export default function Customer360() {
     async function loadProfile() {
         setData((current) => ({ ...current, isLoading: true, error: '' }));
         try {
-            const [customer, agentsRes, notesRes, propertiesRes, projectsRes, plansRes] = await Promise.all([
+            const [customer, agentsRes, notesRes, propertiesRes, projectsRes, plansRes, attributeDefinitionsRes] = await Promise.all([
                 getCustomer(customerId),
                 listAgents(),
                 listNotesByCustomer(customerId),
                 listProperties(),
-                listProjects(),
-                listFloorPlans(),
+                listProjects({ limit: 500 }),
+                listFloorPlans({ limit: 500 }),
+                listPropertyAttributeDefinitions({ limit: 500, active_only: true }),
             ]);
             const owned = propertiesRes.items.filter((property) => property.owner_customer_id === customerId);
             const txEntries = await Promise.all(owned.map(async (property) => [property.property_id, (await listTransactionsByProperty(property.property_id)).items]));
-            setData({ customer, agents: agentsRes.items, notes: notesRes.items, properties: propertiesRes.items, projects: projectsRes.items, plans: plansRes.items, tx: Object.fromEntries(txEntries), isLoading: false, error: '' });
+            setData({
+                customer,
+                agents: agentsRes.items,
+                notes: notesRes.items,
+                properties: propertiesRes.items,
+                projects: projectsRes.items,
+                plans: plansRes.items,
+                attributeDefinitions: attributeDefinitionsRes.items,
+                tx: Object.fromEntries(txEntries),
+                isLoading: false,
+                error: '',
+            });
             setAssignments({ buyer: customer.assigned_buyer_agent_id || '', seller: customer.assigned_seller_agent_id || '' });
+            setPropertyForm(createEmptyPropertyForm(attributeDefinitionsRes.items));
         } catch (error) {
-            setData({ customer: null, agents: [], notes: [], properties: [], projects: [], plans: [], tx: {}, isLoading: false, error: error.message });
+            setData({ customer: null, agents: [], notes: [], properties: [], projects: [], plans: [], attributeDefinitions: [], tx: {}, isLoading: false, error: error.message });
         }
     }
 
@@ -99,16 +111,12 @@ export default function Customer360() {
             community_id: propertyForm.community_id ? Number(propertyForm.community_id) : null,
             plan_id: propertyForm.plan_id ? Number(propertyForm.plan_id) : null,
             property_status: propertyForm.property_status,
-            is_corner: propertyForm.is_corner,
-            is_lake_front: propertyForm.is_lake_front,
-            is_park_front: propertyForm.is_park_front,
-            is_beach: propertyForm.is_beach,
-            is_market: propertyForm.is_market,
+            custom_attributes: serializePropertyAttributes(data.attributeDefinitions, propertyForm.custom_attributes),
         };
         try {
             const property = await createProperty(payload);
             setData((current) => ({ ...current, properties: [property, ...current.properties], tx: { ...current.tx, [property.property_id]: [] }, error: '' }));
-            setPropertyForm(emptyPropertyForm);
+            setPropertyForm(createEmptyPropertyForm(data.attributeDefinitions));
             setShowPropertyForm(false);
         } catch (error) {
             setData((current) => ({ ...current, error: error.message }));
@@ -180,7 +188,7 @@ export default function Customer360() {
                 <div className="space-y-6">
                     <div className="flex items-center justify-between">
                         <h2 className="flex items-center gap-2 text-lg font-black uppercase tracking-tight text-gray-900"><Home className="h-5 w-5 text-brand-600" /> Linked Properties</h2>
-                        <button type="button" onClick={() => setShowPropertyForm((current) => !current)} className="rounded-xl bg-brand-600 px-4 py-2 text-sm font-bold text-white hover:bg-brand-700">{showPropertyForm ? 'Close form' : 'Link property'}</button>
+                        <button type="button" onClick={() => setShowPropertyForm((current) => { const next = !current; if (next) { setPropertyForm(createEmptyPropertyForm(data.attributeDefinitions)); } return next; })} className="rounded-xl bg-brand-600 px-4 py-2 text-sm font-bold text-white hover:bg-brand-700">{showPropertyForm ? 'Close form' : 'Link property'}</button>
                     </div>
 
                     {showPropertyForm && (
@@ -193,49 +201,57 @@ export default function Customer360() {
                                     <select value={propertyForm.community_id} onChange={(event) => setPropertyForm((current) => ({ ...current, community_id: event.target.value, plan_id: '' }))} disabled={!propertyForm.project_id} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none disabled:opacity-50"><option value="">All communities in project</option>{availableCommunities.map((community) => <option key={community.community_id} value={community.community_id}>{community.community_name}</option>)}</select>
                                     <select value={propertyForm.plan_id} onChange={(event) => setPropertyForm((current) => ({ ...current, plan_id: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option value="">Select floor plan</option>{plans.map((plan) => <option key={plan.plan_id} value={plan.plan_id}>{plan.plan_name}</option>)}</select>
                                 </div>
-                                <div className="grid grid-cols-2 gap-3 text-sm font-semibold text-gray-700 md:grid-cols-5">
-                                    {[['is_corner', 'Corner'], ['is_lake_front', 'Lake-front'], ['is_park_front', 'Park-front'], ['is_beach', 'Beachfront'], ['is_market', 'Market-facing']].map(([key, label]) => (
-                                        <label key={key} className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 p-3"><input type="checkbox" checked={propertyForm[key]} onChange={(event) => setPropertyForm((current) => ({ ...current, [key]: event.target.checked }))} /><span>{label}</span></label>
-                                    ))}
-                                </div>
+
+                                <PropertyAttributeFields
+                                    definitions={data.attributeDefinitions}
+                                    values={propertyForm.custom_attributes}
+                                    onChange={(key, value) => setPropertyForm((current) => ({
+                                        ...current,
+                                        custom_attributes: { ...current.custom_attributes, [key]: value },
+                                    }))}
+                                />
+
                                 <button type="submit" disabled={savingProperty} className="rounded-xl bg-gray-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-60">{savingProperty ? 'Linking property...' : 'Link property'}</button>
                             </form>
                         </Card>
                     )}
 
                     {properties.length === 0 && <Card><p className="text-sm font-medium text-gray-500">No properties are linked to this customer yet.</p></Card>}
-                    {properties.map((property) => (
-                        <Card key={property.property_id} title={`${property.villa_number} • ${property.project?.project_name || 'Unassigned project'}`} subtitle={property.plan?.plan_name || 'No floor plan linked'}>
-                            <div className="space-y-4">
-                                <div className="flex flex-wrap gap-2">
-                                    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold tracking-wide ${getPropertyStatusClasses(property.property_status)}`}>{property.property_status}</span>
-                                    {getPropertyAttributeTags(property).map((tag) => <span key={tag} className="inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-700">{tag}</span>)}
+                    {properties.map((property) => {
+                        const attributeTags = getPropertyAttributeTags(property, data.attributeDefinitions);
+                        return (
+                            <Card key={property.property_id} title={`${property.villa_number} - ${property.project?.project_name || 'Unassigned project'}`} subtitle={property.plan?.plan_name || 'No floor plan linked'}>
+                                <div className="space-y-4">
+                                    <div className="flex flex-wrap gap-2">
+                                        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold tracking-wide ${getPropertyStatusClasses(property.property_status)}`}>{property.property_status}</span>
+                                        {attributeTags.map((tag) => <span key={tag} className="inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-700">{tag}</span>)}
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                                        <AssetBlock title={property.community ? `${property.community.community_name} layout` : 'Community layout'} asset={resolveAssetUrl(property.community?.layout_plan_path)} />
+                                        <AssetBlock title="Floor Plan" asset={resolveAssetUrl(property.plan?.floor_plan_image_path)} />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4 rounded-2xl border border-gray-100 bg-gray-50 p-4 md:grid-cols-4">
+                                        <Stat label="Project" value={property.project?.project_name || 'Not linked'} />
+                                        <Stat label="Community" value={property.community?.community_name || 'Project-wide'} />
+                                        <Stat label="Rooms" value={property.plan?.number_of_rooms ?? 'N/A'} />
+                                        <Stat label="Sqft" value={property.plan?.square_footage ?? 'N/A'} />
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-4 rounded-2xl border border-gray-100 bg-gray-50 p-4 md:grid-cols-2">
+                                        <Stat label="Added" value={formatDateLabel(property.created_at)} />
+                                        <Stat label="Plan scope" value={property.plan?.community_id ? 'Community-specific' : 'Project-wide'} />
+                                    </div>
+                                    <div className="overflow-hidden rounded-2xl border border-gray-100">
+                                        <table className="w-full text-left text-sm">
+                                            <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Transaction</th><th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Date</th><th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Price</th></tr></thead>
+                                            <tbody className="divide-y divide-gray-100 bg-white">
+                                                {property.transactions.length === 0 ? <tr><td className="px-4 py-4 text-sm font-medium text-gray-500" colSpan={3}>No historical transactions recorded yet.</td></tr> : property.transactions.map((transaction) => <tr key={transaction.transaction_id}><td className="px-4 py-4 font-semibold text-gray-900">{transaction.transaction_type || 'Transaction'}</td><td className="px-4 py-4 text-gray-500">{formatDateLabel(transaction.transaction_date)}</td><td className="px-4 py-4 font-bold text-gray-900">{formatCurrency(transaction.price)}</td></tr>)}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
-                                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                                    <AssetBlock title={property.community ? `${property.community.community_name} layout` : 'Community layout'} asset={resolveAssetUrl(property.community?.layout_plan_path)} />
-                                    <AssetBlock title="Floor Plan" asset={resolveAssetUrl(property.plan?.floor_plan_image_path)} />
-                                </div>
-                                <div className="grid grid-cols-2 gap-4 rounded-2xl border border-gray-100 bg-gray-50 p-4 md:grid-cols-4">
-                                    <Stat label="Project" value={property.project?.project_name || 'Not linked'} />
-                                    <Stat label="Community" value={property.community?.community_name || 'Project-wide'} />
-                                    <Stat label="Rooms" value={property.plan?.number_of_rooms ?? 'N/A'} />
-                                    <Stat label="Sqft" value={property.plan?.square_footage ?? 'N/A'} />
-                                </div>
-                                <div className="grid grid-cols-1 gap-4 rounded-2xl border border-gray-100 bg-gray-50 p-4 md:grid-cols-2">
-                                    <Stat label="Added" value={formatDateLabel(property.created_at)} />
-                                    <Stat label="Plan scope" value={property.plan?.community_id ? 'Community-specific' : 'Project-wide'} />
-                                </div>
-                                <div className="overflow-hidden rounded-2xl border border-gray-100">
-                                    <table className="w-full text-left text-sm">
-                                        <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Transaction</th><th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Date</th><th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Price</th></tr></thead>
-                                        <tbody className="divide-y divide-gray-100 bg-white">
-                                            {property.transactions.length === 0 ? <tr><td className="px-4 py-4 text-sm font-medium text-gray-500" colSpan={3}>No historical transactions recorded yet.</td></tr> : property.transactions.map((transaction) => <tr key={transaction.transaction_id}><td className="px-4 py-4 font-semibold text-gray-900">{transaction.transaction_type || 'Transaction'}</td><td className="px-4 py-4 text-gray-500">{formatDateLabel(transaction.transaction_date)}</td><td className="px-4 py-4 font-bold text-gray-900">{formatCurrency(transaction.price)}</td></tr>)}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </Card>
-                    ))}
+                            </Card>
+                        );
+                    })}
                 </div>
 
                 <div className="space-y-6">
@@ -251,7 +267,7 @@ export default function Customer360() {
                         <div className="space-y-6">
                             {data.notes.length === 0 ? <p className="text-sm font-medium text-gray-500">No interaction notes recorded yet.</p> : data.notes.map((note) => {
                                 const agent = data.agents.find((item) => item.agent_id === note.agent_id);
-                                return <div key={note.note_id} className="relative border-l-2 border-brand-100 pl-6"><div className="absolute -left-[9px] top-1 h-4 w-4 rounded-full border-4 border-brand-500 bg-white" /><div className="rounded-2xl border border-gray-100 bg-gray-50 p-4"><p className="text-sm font-medium leading-relaxed text-gray-700">{note.note_text}</p><div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-gray-400"><span>{agent?.name || 'System entry'}</span><span>•</span><span>{formatDateLabel(note.created_at, true)}</span></div></div></div>;
+                                return <div key={note.note_id} className="relative border-l-2 border-brand-100 pl-6"><div className="absolute -left-[9px] top-1 h-4 w-4 rounded-full border-4 border-brand-500 bg-white" /><div className="rounded-2xl border border-gray-100 bg-gray-50 p-4"><p className="text-sm font-medium leading-relaxed text-gray-700">{note.note_text}</p><div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-gray-400"><span>{agent?.name || 'System entry'}</span><span>-</span><span>{formatDateLabel(note.created_at, true)}</span></div></div></div>;
                             })}
                         </div>
                     </Card>
@@ -259,6 +275,120 @@ export default function Customer360() {
             </div>
         </div>
     );
+}
+
+function PropertyAttributeFields({ definitions, values, onChange }) {
+    if (definitions.length === 0) {
+        return <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 text-sm font-medium text-gray-500">No configurable property attributes are active yet.</div>;
+    }
+
+    const booleanDefinitions = definitions.filter((definition) => definition.value_type === 'boolean');
+    const valueDefinitions = definitions.filter((definition) => definition.value_type !== 'boolean');
+
+    return (
+        <div className="space-y-4">
+            {booleanDefinitions.length > 0 && (
+                <div className="grid grid-cols-2 gap-3 text-sm font-semibold text-gray-700 md:grid-cols-3 xl:grid-cols-4">
+                    {booleanDefinitions.map((definition) => (
+                        <label key={definition.attribute_definition_id} className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 p-3">
+                            <input type="checkbox" checked={Boolean(values[definition.key])} onChange={(event) => onChange(definition.key, event.target.checked)} />
+                            <span>{definition.label}</span>
+                        </label>
+                    ))}
+                </div>
+            )}
+
+            {valueDefinitions.length > 0 && (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    {valueDefinitions.map((definition) => (
+                        <div key={definition.attribute_definition_id} className="space-y-2">
+                            <label className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">{definition.label}</label>
+                            {definition.value_type === 'select' ? (
+                                <select value={values[definition.key] ?? ''} onChange={(event) => onChange(definition.key, event.target.value)} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none">
+                                    <option value="">Select {definition.label}</option>
+                                    {(definition.options || []).map((option) => <option key={option} value={option}>{option}</option>)}
+                                </select>
+                            ) : definition.value_type === 'number' ? (
+                                <input type="number" value={values[definition.key] ?? ''} onChange={(event) => onChange(definition.key, event.target.value)} placeholder={definition.label} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                            ) : (
+                                <input type="text" value={values[definition.key] ?? ''} onChange={(event) => onChange(definition.key, event.target.value)} placeholder={definition.label} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function createEmptyPropertyForm(definitions) {
+    return {
+        villa_number: '',
+        project_id: '',
+        community_id: '',
+        plan_id: '',
+        property_status: 'Off-Market',
+        custom_attributes: buildPropertyAttributeState(definitions),
+    };
+}
+
+function buildPropertyAttributeState(definitions, property = null) {
+    return definitions.reduce((state, definition) => {
+        const value = getDefinitionValue(definition, property);
+        if (definition.value_type === 'boolean') {
+            state[definition.key] = Boolean(value);
+        } else if (definition.value_type === 'number') {
+            state[definition.key] = value === null || value === undefined ? '' : String(value);
+        } else {
+            state[definition.key] = value ?? '';
+        }
+        return state;
+    }, {});
+}
+
+function getDefinitionValue(definition, property) {
+    const customAttributes = property?.custom_attributes || {};
+    if (Object.prototype.hasOwnProperty.call(customAttributes, definition.key)) {
+        return customAttributes[definition.key];
+    }
+    if (Object.prototype.hasOwnProperty.call(property || {}, definition.key)) {
+        return property[definition.key];
+    }
+    return null;
+}
+
+function serializePropertyAttributes(definitions, values = {}) {
+    return definitions.reduce((payload, definition) => {
+        const rawValue = values[definition.key];
+        if (definition.value_type === 'boolean') {
+            payload[definition.key] = Boolean(rawValue);
+            return payload;
+        }
+        if (definition.value_type === 'number') {
+            payload[definition.key] = rawValue === '' || rawValue === null || rawValue === undefined ? null : Number(rawValue);
+            return payload;
+        }
+        const normalized = String(rawValue ?? '').trim();
+        payload[definition.key] = normalized || null;
+        return payload;
+    }, {});
+}
+
+function getPropertyAttributeTags(property, definitions) {
+    const tags = [];
+    definitions.forEach((definition) => {
+        const value = getDefinitionValue(definition, property);
+        if (definition.value_type === 'boolean') {
+            if (value) {
+                tags.push(definition.label);
+            }
+            return;
+        }
+        if (value !== null && value !== undefined && value !== '') {
+            tags.push(`${definition.label}: ${value}`);
+        }
+    });
+    return tags;
 }
 
 function Stat({ label, value }) {

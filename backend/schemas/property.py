@@ -1,22 +1,24 @@
 # backend/schemas/property.py
-from pydantic import BaseModel
-from typing import Optional
 from datetime import datetime
+from typing import Any, Optional
+
+from pydantic import BaseModel, Field
 
 class PropertyBase(BaseModel):
     villa_number: str
+    property_status: str = "Off-Market"
     is_corner: bool = False
     is_lake_front: bool = False
     is_park_front: bool = False
     is_beach: bool = False
     is_market: bool = False
+    custom_attributes: dict[str, Any] = Field(default_factory=dict)
 
 class PropertyCreate(PropertyBase):
     owner_customer_id: Optional[int] = None
     project_id: Optional[int] = None
     community_id: Optional[int] = None
     plan_id: Optional[int] = None
-    property_status: str = "Off-Market"
 
 class PropertyUpdate(BaseModel):
     owner_customer_id: Optional[int] = None
@@ -30,6 +32,7 @@ class PropertyUpdate(BaseModel):
     is_park_front: Optional[bool] = None
     is_beach: Optional[bool] = None
     is_market: Optional[bool] = None
+    custom_attributes: Optional[dict[str, Any]] = None
 
 class PropertyResponse(PropertyBase):
     property_id: int
