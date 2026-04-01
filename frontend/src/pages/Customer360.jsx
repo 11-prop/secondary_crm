@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ChevronLeft, Home, Mail, MessageSquare, Phone, Plus, User } from 'lucide-react';
+import { ChevronLeft, Home, Mail, MessageSquare, Phone, Plus, Search, User } from 'lucide-react';
 
 import AssetPreview from '../components/AssetPreview';
 import Card from '../components/Card';
@@ -16,6 +16,7 @@ import {
     listPropertyAttributeDefinitions,
     listTransactionsByProperty,
     resolveAssetUrl,
+    updateProperty,
     updateCustomer,
 } from '../api/resources';
 import { formatCurrency, formatCustomerName, formatDateLabel, getPropertyStatusClasses } from '../lib/formatters';
@@ -29,13 +30,40 @@ export default function Customer360() {
     const [noteAgentId, setNoteAgentId] = useState('');
     const [propertyForm, setPropertyForm] = useState(createEmptyPropertyForm([]));
     const [showPropertyForm, setShowPropertyForm] = useState(false);
+    const [propertyFormMode, setPropertyFormMode] = useState('existing');
+    const [propertySearchTerm, setPropertySearchTerm] = useState('');
+    const [debouncedPropertySearchTerm, setDebouncedPropertySearchTerm] = useState('');
+    const [propertySearchResults, setPropertySearchResults] = useState([]);
     const [savingAssignments, setSavingAssignments] = useState(false);
     const [savingNote, setSavingNote] = useState(false);
     const [savingProperty, setSavingProperty] = useState(false);
+    const [isSearchingProperties, setIsSearchingProperties] = useState(false);
+    const [linkingPropertyId, setLinkingPropertyId] = useState(null);
 
     useEffect(() => {
         if (!Number.isNaN(customerId)) loadProfile();
     }, [customerId]);
+
+    useEffect(() => {
+        const timeoutId = window.setTimeout(() => {
+            setDebouncedPropertySearchTerm(propertySearchTerm.trim());
+        }, 250);
+
+        return () => window.clearTimeout(timeoutId);
+    }, [propertySearchTerm]);
+
+    useEffect(() => {
+        if (!showPropertyForm || propertyFormMode !== 'existing') {
+            return;
+        }
+
+        if (!debouncedPropertySearchTerm) {
+            setPropertySearchResults([]);
+            return;
+        }
+
+        searchExistingProperties(debouncedPropertySearchTerm);
+    }, [showPropertyForm, propertyFormMode, debouncedPropertySearchTerm, customerId]);
 
     async function loadProfile() {
         setData((current) => ({ ...current, isLoading: true, error: '' }));
@@ -115,13 +143,62 @@ export default function Customer360() {
         try {
             const property = await createProperty(payload);
             setData((current) => ({ ...current, properties: [property, ...current.properties], tx: { ...current.tx, [property.property_id]: [] }, error: '' }));
-            setPropertyForm(createEmptyPropertyForm(data.attributeDefinitions));
-            setShowPropertyForm(false);
+            resetPropertyLinkPanel();
         } catch (error) {
             setData((current) => ({ ...current, error: error.message }));
         } finally {
             setSavingProperty(false);
         }
+    }
+
+    async function searchExistingProperties(search) {
+        setIsSearchingProperties(true);
+        try {
+            const result = await listProperties({ limit: 20, q: search });
+            setPropertySearchResults(result.items.filter((property) => property.owner_customer_id !== customerId));
+            setData((current) => ({ ...current, error: '' }));
+        } catch (error) {
+            setPropertySearchResults([]);
+            setData((current) => ({ ...current, error: error.message }));
+        } finally {
+            setIsSearchingProperties(false);
+        }
+    }
+
+    async function linkExistingProperty(property) {
+        setLinkingPropertyId(property.property_id);
+        try {
+            await updateProperty(property.property_id, { owner_customer_id: customerId });
+            resetPropertyLinkPanel();
+            await loadProfile();
+        } catch (error) {
+            setData((current) => ({ ...current, error: error.message }));
+        } finally {
+            setLinkingPropertyId(null);
+        }
+    }
+
+    function resetPropertyLinkPanel() {
+        setShowPropertyForm(false);
+        setPropertyFormMode('existing');
+        setPropertySearchTerm('');
+        setDebouncedPropertySearchTerm('');
+        setPropertySearchResults([]);
+        setPropertyForm(createEmptyPropertyForm(data.attributeDefinitions));
+    }
+
+    function openPropertyLinkPanel() {
+        setPropertyFormMode('existing');
+        setPropertySearchTerm('');
+        setDebouncedPropertySearchTerm('');
+        setPropertySearchResults([]);
+        setShowPropertyForm(true);
+    }
+
+    function openNewPropertyPanel() {
+        setPropertyFormMode('create');
+        setPropertyForm(createEmptyPropertyForm(data.attributeDefinitions));
+        setShowPropertyForm(true);
     }
 
     if (data.isLoading) return <div className="py-16 text-center text-sm font-medium text-gray-500">Loading customer profile...</div>;
@@ -187,31 +264,99 @@ export default function Customer360() {
                 <div className="space-y-6">
                     <div className="flex items-center justify-between">
                         <h2 className="flex items-center gap-2 text-lg font-black uppercase tracking-tight text-gray-900"><Home className="h-5 w-5 text-brand-600" /> Linked Properties</h2>
-                        <button type="button" onClick={() => setShowPropertyForm((current) => { const next = !current; if (next) { setPropertyForm(createEmptyPropertyForm(data.attributeDefinitions)); } return next; })} className="rounded-xl bg-brand-600 px-4 py-2 text-sm font-bold text-white hover:bg-brand-700">{showPropertyForm ? 'Close form' : 'Link property'}</button>
+                        <button type="button" onClick={() => { if (showPropertyForm) { resetPropertyLinkPanel(); } else { openPropertyLinkPanel(); } }} className="rounded-xl bg-brand-600 px-4 py-2 text-sm font-bold text-white hover:bg-brand-700">{showPropertyForm ? 'Close panel' : 'Link property'}</button>
                     </div>
 
                     {showPropertyForm && (
-                        <Card title="Link a property" subtitle="Attach a new unit directly from the customer profile.">
-                            <form className="space-y-4" onSubmit={addProperty}>
-                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                    <input type="text" required placeholder="Villa or unit number" value={propertyForm.villa_number} onChange={(event) => setPropertyForm((current) => ({ ...current, villa_number: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
-                                    <select value={propertyForm.property_status} onChange={(event) => setPropertyForm((current) => ({ ...current, property_status: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option>Off-Market</option><option>Primary Residence</option><option>Active Listing</option><option>Rented</option></select>
-                                    <select value={propertyForm.project_id} onChange={(event) => setPropertyForm((current) => ({ ...current, project_id: event.target.value, community_id: '', plan_id: '' }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option value="">Select project</option>{data.projects.map((project) => <option key={project.project_id} value={project.project_id}>{project.project_name}</option>)}</select>
-                                    <select value={propertyForm.community_id} onChange={(event) => setPropertyForm((current) => ({ ...current, community_id: event.target.value, plan_id: '' }))} disabled={!propertyForm.project_id} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none disabled:opacity-50"><option value="">All communities in project</option>{availableCommunities.map((community) => <option key={community.community_id} value={community.community_id}>{community.community_name}</option>)}</select>
-                                    <select value={propertyForm.plan_id} onChange={(event) => setPropertyForm((current) => ({ ...current, plan_id: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option value="">Select floor plan</option>{plans.map((plan) => <option key={plan.plan_id} value={plan.plan_id}>{plan.plan_name}</option>)}</select>
+                        <Card title={propertyFormMode === 'existing' ? 'Link an existing property' : 'Create and link a new property'} subtitle={propertyFormMode === 'existing' ? 'Search the inventory first. If the property does not exist yet, create it from the same panel.' : 'Create a new unit only when you cannot find an existing property to link.'}>
+                            <div className="space-y-4">
+                                <div className="flex flex-wrap gap-2">
+                                    <button type="button" onClick={() => setPropertyFormMode('existing')} className={`rounded-xl px-4 py-2 text-sm font-bold ${propertyFormMode === 'existing' ? 'bg-gray-900 text-white' : 'border border-gray-200 bg-white text-gray-600'}`}>Link existing property</button>
+                                    <button type="button" onClick={openNewPropertyPanel} className={`rounded-xl px-4 py-2 text-sm font-bold ${propertyFormMode === 'create' ? 'bg-brand-600 text-white' : 'border border-gray-200 bg-white text-gray-600'}`}>Create new property</button>
                                 </div>
 
-                                <PropertyAttributeFields
-                                    definitions={data.attributeDefinitions}
-                                    values={propertyForm.custom_attributes}
-                                    onChange={(key, value) => setPropertyForm((current) => ({
-                                        ...current,
-                                        custom_attributes: { ...current.custom_attributes, [key]: value },
-                                    }))}
-                                />
+                                {propertyFormMode === 'existing' ? (
+                                    <div className="space-y-4">
+                                        <div className="relative">
+                                            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                                            <input
+                                                type="text"
+                                                value={propertySearchTerm}
+                                                onChange={(event) => setPropertySearchTerm(event.target.value)}
+                                                placeholder="Search by villa number, project, community, plan, or owner..."
+                                                className="w-full rounded-xl border border-gray-200 bg-gray-50 py-3 pl-10 pr-4 text-sm outline-none"
+                                            />
+                                        </div>
 
-                                <button type="submit" disabled={savingProperty} className="rounded-xl bg-gray-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-60">{savingProperty ? 'Linking property...' : 'Link property'}</button>
-                            </form>
+                                        {!debouncedPropertySearchTerm ? (
+                                            <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm font-medium text-gray-500">Start typing to search existing properties across the CRM.</div>
+                                        ) : isSearchingProperties ? (
+                                            <div className="rounded-2xl border border-gray-100 bg-gray-50 p-6 text-sm font-medium text-gray-500">Searching properties...</div>
+                                        ) : propertySearchResults.length === 0 ? (
+                                            <div className="rounded-2xl border border-gray-100 bg-gray-50 p-6 text-sm font-medium text-gray-500">
+                                                No matching properties were found. You can create a new property instead.
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-3">
+                                                {propertySearchResults.map((property) => {
+                                                    const project = data.projects.find((item) => item.project_id === property.project_id);
+                                                    const community = getProjectCommunities(data.projects, property.project_id).find((item) => item.community_id === property.community_id);
+                                                    const plan = data.plans.find((item) => item.plan_id === property.plan_id);
+                                                    const isLinkedElsewhere = !!property.owner_customer_id && property.owner_customer_id !== customerId;
+
+                                                    return (
+                                                        <div key={property.property_id} className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
+                                                            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                                                                <div className="min-w-0">
+                                                                    <div className="flex flex-wrap items-center gap-2">
+                                                                        <p className="text-base font-bold text-gray-900">{property.villa_number}</p>
+                                                                        <span className={`inline-flex rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] ${getPropertyStatusClasses(property.property_status)}`}>{property.property_status}</span>
+                                                                        {isLinkedElsewhere && <span className="inline-flex rounded-full bg-amber-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-amber-700 ring-1 ring-amber-100">Currently linked elsewhere</span>}
+                                                                    </div>
+                                                                    <p className="mt-1 text-sm font-medium text-gray-600">{project?.project_name || 'Unassigned project'}{community ? ` - ${community.community_name}` : ''}</p>
+                                                                    <p className="mt-1 text-sm text-gray-500">{plan?.plan_name || 'No floor plan linked'}</p>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => linkExistingProperty(property)}
+                                                                    disabled={linkingPropertyId === property.property_id}
+                                                                    className="rounded-xl bg-gray-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+                                                                >
+                                                                    {linkingPropertyId === property.property_id ? 'Linking...' : isLinkedElsewhere ? 'Relink property' : 'Link property'}
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <form className="space-y-4" onSubmit={addProperty}>
+                                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                            <input type="text" required placeholder="Villa or unit number" value={propertyForm.villa_number} onChange={(event) => setPropertyForm((current) => ({ ...current, villa_number: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                                            <select value={propertyForm.property_status} onChange={(event) => setPropertyForm((current) => ({ ...current, property_status: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option>Off-Market</option><option>Primary Residence</option><option>Active Listing</option><option>Rented</option></select>
+                                            <select value={propertyForm.project_id} onChange={(event) => setPropertyForm((current) => ({ ...current, project_id: event.target.value, community_id: '', plan_id: '' }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option value="">Select project</option>{data.projects.map((project) => <option key={project.project_id} value={project.project_id}>{project.project_name}</option>)}</select>
+                                            <select value={propertyForm.community_id} onChange={(event) => setPropertyForm((current) => ({ ...current, community_id: event.target.value, plan_id: '' }))} disabled={!propertyForm.project_id} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none disabled:opacity-50"><option value="">All communities in project</option>{availableCommunities.map((community) => <option key={community.community_id} value={community.community_id}>{community.community_name}</option>)}</select>
+                                            <select value={propertyForm.plan_id} onChange={(event) => setPropertyForm((current) => ({ ...current, plan_id: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option value="">Select floor plan</option>{plans.map((plan) => <option key={plan.plan_id} value={plan.plan_id}>{plan.plan_name}</option>)}</select>
+                                        </div>
+
+                                        <PropertyAttributeFields
+                                            definitions={data.attributeDefinitions}
+                                            values={propertyForm.custom_attributes}
+                                            onChange={(key, value) => setPropertyForm((current) => ({
+                                                ...current,
+                                                custom_attributes: { ...current.custom_attributes, [key]: value },
+                                            }))}
+                                        />
+
+                                        <div className="flex items-center gap-3">
+                                            <button type="submit" disabled={savingProperty} className="rounded-xl bg-gray-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-60">{savingProperty ? 'Creating property...' : 'Create and link property'}</button>
+                                            <button type="button" onClick={() => setPropertyFormMode('existing')} className="rounded-xl border border-gray-200 px-4 py-3 text-sm font-bold text-gray-600">Back to existing search</button>
+                                        </div>
+                                    </form>
+                                )}
+                            </div>
                         </Card>
                     )}
 
