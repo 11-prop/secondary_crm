@@ -782,11 +782,11 @@ INSERT INTO property_attribute_values (
     value_number,
     created_at
 )
-SELECT property_id, property_type_attr_id, NULL, property_type, NULL, CURRENT_TIMESTAMP FROM resolved
+SELECT property_id, property_type_attr_id, NULL::boolean, property_type::text, NULL::numeric, CURRENT_TIMESTAMP FROM resolved
 UNION ALL
-SELECT property_id, property_style_attr_id, NULL, property_style, NULL, CURRENT_TIMESTAMP FROM resolved
+SELECT property_id, property_style_attr_id, NULL::boolean, property_style::text, NULL::numeric, CURRENT_TIMESTAMP FROM resolved
 UNION ALL
-SELECT property_id, property_location_attr_id, NULL, property_location, NULL, CURRENT_TIMESTAMP FROM resolved
+SELECT property_id, property_location_attr_id, NULL::boolean, property_location::text, NULL::numeric, CURRENT_TIMESTAMP FROM resolved
 ON CONFLICT (property_id, attribute_definition_id) DO UPDATE
 SET value_boolean = EXCLUDED.value_boolean,
     value_text = EXCLUDED.value_text,
