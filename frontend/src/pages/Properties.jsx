@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 
 import Card from '../components/Card';
 import PaginationControls from '../components/PaginationControls';
+import PropertyTransactionDrawer from '../components/PropertyTransactionDrawer';
 import {
     createProperty,
     createTransaction,
@@ -15,7 +16,7 @@ import {
     listTransactionsByProperty,
     updateProperty,
 } from '../api/resources';
-import { formatCurrency, formatCustomerName, formatDateLabel } from '../lib/formatters';
+import { formatCustomerName, formatDateLabel } from '../lib/formatters';
 
 const emptyTransactionForm = { transaction_date: '', transaction_type: 'Sale', price: '', notes: '' };
 const DEFAULT_PAGE_SIZE = 25;
@@ -122,6 +123,7 @@ export default function Properties() {
 
     async function openTransactionEditor(propertyId) {
         setSelectedPropertyId(propertyId);
+        setTransactionForm(emptyTransactionForm);
         if (Object.prototype.hasOwnProperty.call(data.tx, propertyId)) {
             return;
         }
@@ -139,6 +141,11 @@ export default function Properties() {
         } finally {
             setLoadingTransactionsForPropertyId(null);
         }
+    }
+
+    function closeTransactionEditor() {
+        setSelectedPropertyId(null);
+        setTransactionForm(emptyTransactionForm);
     }
 
     async function handleSaveProperty(event) {
@@ -228,8 +235,7 @@ export default function Properties() {
                 tx: { ...current.tx, [selectedPropertyId]: [transaction, ...(current.tx[selectedPropertyId] || [])] },
                 error: '',
             }));
-            setTransactionForm(emptyTransactionForm);
-            setSelectedPropertyId(null);
+            closeTransactionEditor();
         } catch (saveError) {
             setData((current) => ({ ...current, error: saveError.message }));
         } finally {
@@ -247,7 +253,19 @@ export default function Properties() {
         }
         return true;
     });
-    const selectedProperty = data.properties.find((property) => property.property_id === selectedPropertyId);
+    const selectedPropertyRecord = data.properties.find((property) => property.property_id === selectedPropertyId);
+    const selectedPropertyProject = data.projects.find((item) => item.project_id === selectedPropertyRecord?.project_id);
+    const selectedPropertyCommunity = getProjectCommunities(data.projects, selectedPropertyRecord?.project_id).find((item) => item.community_id === selectedPropertyRecord?.community_id);
+    const selectedPropertyCustomer = data.customers.find((item) => item.customer_id === selectedPropertyRecord?.owner_customer_id);
+    const selectedProperty = selectedPropertyRecord
+        ? {
+            ...selectedPropertyRecord,
+            project_name: selectedPropertyProject?.project_name || '',
+            community_name: selectedPropertyCommunity?.community_name || '',
+            owner_name: selectedPropertyCustomer ? formatCustomerName(selectedPropertyCustomer) : '',
+            attribute_tags: getPropertyAttributeTags(selectedPropertyRecord, data.attributeDefinitions),
+        }
+        : null;
     const selectedPropertyTransactions = selectedPropertyId ? (data.tx[selectedPropertyId] || []) : [];
     const isLoadingSelectedPropertyTransactions = selectedPropertyId === loadingTransactionsForPropertyId;
     const activeListingsOnPage = data.properties.filter((property) => property.property_status === 'Active Listing').length;
@@ -344,29 +362,17 @@ export default function Properties() {
                 )}
             </Card>
 
-            {selectedProperty && (
-                <Card title={`Record transaction for ${selectedProperty.villa_number}`} subtitle="Append a sale or rent event to the historical ledger.">
-                    <form className="space-y-4" onSubmit={handleCreateTransaction}>
-                        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                            <input type="date" value={transactionForm.transaction_date} onChange={(event) => setTransactionForm((current) => ({ ...current, transaction_date: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
-                            <select value={transactionForm.transaction_type} onChange={(event) => setTransactionForm((current) => ({ ...current, transaction_type: event.target.value }))} className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option>Sale</option><option>Rent</option></select>
-                            <input type="number" value={transactionForm.price} onChange={(event) => setTransactionForm((current) => ({ ...current, price: event.target.value }))} placeholder="Price" className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
-                        </div>
-                        <textarea rows={3} value={transactionForm.notes} onChange={(event) => setTransactionForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Notes" className="w-full rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm outline-none" />
-                        <div className="flex items-center gap-3">
-                            <button type="submit" disabled={savingTransaction} className="rounded-xl bg-gray-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-60">{savingTransaction ? 'Saving transaction...' : 'Save transaction'}</button>
-                            <button type="button" onClick={() => setSelectedPropertyId(null)} className="rounded-xl border border-gray-200 px-4 py-3 text-sm font-bold text-gray-600">Cancel</button>
-                        </div>
-
-                        <div className="overflow-hidden rounded-2xl border border-gray-100">
-                            <table className="w-full text-left text-sm">
-                                <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Type</th><th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Date</th><th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Price</th></tr></thead>
-                                <tbody className="divide-y divide-gray-100 bg-white">{isLoadingSelectedPropertyTransactions ? <tr><td className="px-4 py-4 text-sm font-medium text-gray-500" colSpan={3}>Loading transactions...</td></tr> : selectedPropertyTransactions.length === 0 ? <tr><td className="px-4 py-4 text-sm font-medium text-gray-500" colSpan={3}>No transactions recorded yet.</td></tr> : selectedPropertyTransactions.map((transaction) => <tr key={transaction.transaction_id}><td className="px-4 py-4 font-semibold text-gray-900">{transaction.transaction_type}</td><td className="px-4 py-4 text-gray-500">{formatDateLabel(transaction.transaction_date)}</td><td className="px-4 py-4 font-bold text-gray-900">{formatCurrency(transaction.price)}</td></tr>)}</tbody>
-                            </table>
-                        </div>
-                    </form>
-                </Card>
-            )}
+            <PropertyTransactionDrawer
+                isOpen={Boolean(selectedProperty)}
+                onClose={closeTransactionEditor}
+                property={selectedProperty}
+                transactions={selectedPropertyTransactions}
+                isLoading={isLoadingSelectedPropertyTransactions}
+                isSaving={savingTransaction}
+                form={transactionForm}
+                onFormChange={(field, value) => setTransactionForm((current) => ({ ...current, [field]: value }))}
+                onSubmit={handleCreateTransaction}
+            />
         </div>
     );
 }
