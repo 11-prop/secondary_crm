@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, Pencil, Plus, RefreshCw, Search, Users } from 'lucide-react';
+import { ArrowRight, MessageSquare, Pencil, Plus, RefreshCw, Search, Users } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 
 import { createCustomer, listAgents, listCustomers, updateCustomer } from '../api/resources';
 import AddCustomerDrawer from '../components/AddCustomerDrawer';
 import Card from '../components/Card';
+import CustomerInteractionDrawer from '../components/CustomerInteractionDrawer';
 import PaginationControls from '../components/PaginationControls';
 import { formatCustomerInitials, formatCustomerName, getClientTypeClasses } from '../lib/formatters';
 
@@ -24,6 +25,7 @@ export default function Customers() {
     const [isCreating, setIsCreating] = useState(false);
     const [isDrawerOpen, setDrawerOpen] = useState(false);
     const [editingCustomer, setEditingCustomer] = useState(null);
+    const [interactionCustomer, setInteractionCustomer] = useState(null);
     const [error, setError] = useState('');
     const [protectedOnly, setProtectedOnly] = useState(searchParams.get('protected') === 'true');
 
@@ -136,6 +138,14 @@ export default function Customers() {
         } finally {
             setIsCreating(false);
         }
+    }
+
+    function handleNoteAdded(customerId) {
+        setCustomers((current) => current.map((customer) => (
+            customer.customer_id === customerId
+                ? { ...customer, interaction_note_count: (customer.interaction_note_count || 0) + 1 }
+                : customer
+        )));
     }
 
     const protectedLeadCount = customers.filter((customer) => customer.assigned_buyer_agent_id || customer.assigned_seller_agent_id).length;
@@ -276,6 +286,14 @@ export default function Customers() {
                                                     <div className="flex items-center justify-end gap-4">
                                                         <button
                                                             type="button"
+                                                            onClick={() => setInteractionCustomer(customer)}
+                                                            className="inline-flex items-center gap-1 text-gray-500 transition-colors hover:text-brand-700"
+                                                        >
+                                                            <MessageSquare className="h-4 w-4" />
+                                                            Add interaction
+                                                        </button>
+                                                        <button
+                                                            type="button"
                                                             onClick={() => { setEditingCustomer(customer); setDrawerOpen(true); }}
                                                             className="inline-flex items-center gap-1 text-gray-500 transition-colors hover:text-brand-700"
                                                         >
@@ -329,6 +347,14 @@ export default function Customers() {
                 initialData={editingCustomer}
                 title={editingCustomer ? 'Edit Customer Profile' : 'New Customer Profile'}
                 submitLabel={editingCustomer ? 'Save Customer Changes' : 'Create Customer Profile'}
+            />
+
+            <CustomerInteractionDrawer
+                isOpen={!!interactionCustomer}
+                onClose={() => setInteractionCustomer(null)}
+                customer={interactionCustomer}
+                agents={agents}
+                onNoteAdded={handleNoteAdded}
             />
         </div>
     );

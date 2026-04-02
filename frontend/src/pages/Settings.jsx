@@ -94,6 +94,24 @@ export default function Settings() {
         setSearchParams(nextParams, { replace: true });
     }
 
+    const editingProject = useMemo(
+        () => data.projects.find((project) => project.project_id === editingProjectId) || null,
+        [data.projects, editingProjectId],
+    );
+
+    const editingPlan = useMemo(
+        () => data.plans.find((plan) => plan.plan_id === editingPlanId) || null,
+        [data.plans, editingPlanId],
+    );
+
+    const editingCommunityRecord = useMemo(() => {
+        if (!editingCommunity) {
+            return null;
+        }
+
+        return getProjectCommunities(data.projects, editingCommunity.project_id).find((community) => community.community_id === editingCommunity.community_id) || null;
+    }, [data.projects, editingCommunity]);
+
     const editingAttribute = useMemo(
         () => data.attributeDefinitions.find((definition) => definition.attribute_definition_id === editingAttributeId) || null,
         [data.attributeDefinitions, editingAttributeId],
@@ -201,21 +219,13 @@ export default function Settings() {
         setSavingProject(true);
         try {
             const payload = { project_name: projectForm.project_name };
-            if (editingProjectId) {
-                const project = await updateProject(editingProjectId, payload);
-                const hydratedProject = { ...project, communities: project.communities || data.projects.find((item) => item.project_id === project.project_id)?.communities || [] };
-                setData((current) => ({ ...current, projects: sortProjects(current.projects.map((item) => (item.project_id === hydratedProject.project_id ? hydratedProject : item))) }));
-                showSuccess(`Project "${project.project_name}" updated.`);
-            } else {
-                const project = await createProject(payload);
-                const hydratedProject = { ...project, communities: project.communities || [] };
-                setData((current) => ({ ...current, projects: sortProjects([hydratedProject, ...current.projects]) }));
-                setCommunityForm((current) => ({ ...current, project_id: String(project.project_id) }));
-                setPlanForm((current) => ({ ...current, project_id: String(project.project_id), community_id: '' }));
-                showSuccess(`Project "${project.project_name}" created. You can now add one or more communities under it.`);
-            }
+            const project = await createProject(payload);
+            const hydratedProject = { ...project, communities: project.communities || [] };
+            setData((current) => ({ ...current, projects: sortProjects([hydratedProject, ...current.projects]) }));
+            setCommunityForm((current) => ({ ...current, project_id: String(project.project_id) }));
+            setPlanForm((current) => ({ ...current, project_id: String(project.project_id), community_id: '' }));
+            showSuccess(`Project "${project.project_name}" created. You can now add one or more communities under it.`);
             setProjectForm(emptyProjectForm);
-            setEditingProjectId(null);
         } catch (error) {
             showError(error.message);
         } finally {
@@ -228,35 +238,18 @@ export default function Settings() {
         setSavingCommunity(true);
         try {
             const layout_plan_path = communityForm.file ? await uploadImage('projects', communityForm.file) : communityForm.existing_layout_plan_path;
-            if (editingCommunity) {
-                const community = await updateCommunity(editingCommunity.project_id, editingCommunity.community_id, { community_name: communityForm.community_name, layout_plan_path });
-                setData((current) => ({
-                    ...current,
-                    projects: current.projects.map((project) => (
-                        project.project_id === editingCommunity.project_id
-                            ? {
-                                ...project,
-                                communities: (project.communities || []).map((item) => (item.community_id === community.community_id ? community : item)).sort((left, right) => left.community_name.localeCompare(right.community_name)),
-                            }
-                            : project
-                    )),
-                }));
-                showSuccess(`Community "${community.community_name}" updated.`);
-            } else {
-                const community = await createCommunity(Number(communityForm.project_id), { community_name: communityForm.community_name, layout_plan_path });
-                setData((current) => ({
-                    ...current,
-                    projects: current.projects.map((project) => (
-                        project.project_id === community.project_id
-                            ? { ...project, communities: [...(project.communities || []), community].sort((left, right) => left.community_name.localeCompare(right.community_name)) }
-                            : project
-                    )),
-                }));
-                setPlanForm((current) => current.project_id === communityForm.project_id ? { ...current, community_id: String(community.community_id) } : current);
-                showSuccess(`Community "${community.community_name}" added.`);
-            }
+            const community = await createCommunity(Number(communityForm.project_id), { community_name: communityForm.community_name, layout_plan_path });
+            setData((current) => ({
+                ...current,
+                projects: current.projects.map((project) => (
+                    project.project_id === community.project_id
+                        ? { ...project, communities: [...(project.communities || []), community].sort((left, right) => left.community_name.localeCompare(right.community_name)) }
+                        : project
+                )),
+            }));
+            setPlanForm((current) => current.project_id === communityForm.project_id ? { ...current, community_id: String(community.community_id) } : current);
+            showSuccess(`Community "${community.community_name}" added.`);
             setCommunityForm(emptyCommunityForm);
-            setEditingCommunity(null);
         } catch (error) {
             showError(error.message);
         } finally {
@@ -278,17 +271,10 @@ export default function Settings() {
                 amenities: planForm.amenities || null,
                 floor_plan_image_path,
             };
-            if (editingPlanId) {
-                const plan = await updateFloorPlan(editingPlanId, payload);
-                setData((current) => ({ ...current, plans: sortFloorPlans(current.plans.map((item) => (item.plan_id === plan.plan_id ? plan : item))) }));
-                showSuccess(`Floor plan "${plan.plan_name}" updated.`);
-            } else {
-                const plan = await createFloorPlan(payload);
-                setData((current) => ({ ...current, plans: sortFloorPlans([plan, ...current.plans]) }));
-                showSuccess(`Floor plan "${plan.plan_name}" created.`);
-            }
+            const plan = await createFloorPlan(payload);
+            setData((current) => ({ ...current, plans: sortFloorPlans([plan, ...current.plans]) }));
+            showSuccess(`Floor plan "${plan.plan_name}" created.`);
             setPlanForm(emptyPlanForm);
-            setEditingPlanId(null);
         } catch (error) {
             showError(error.message);
         } finally {
@@ -313,27 +299,14 @@ export default function Settings() {
                 throw new Error('Attribute label is required.');
             }
 
-            let definition;
-            if (editingAttributeId) {
-                definition = await updatePropertyAttributeDefinition(editingAttributeId, payload);
-                setData((current) => ({
-                    ...current,
-                    attributeDefinitions: sortPropertyAttributeDefinitions(current.attributeDefinitions.map((item) => (
-                        item.attribute_definition_id === definition.attribute_definition_id ? definition : item
-                    ))),
-                }));
-                showSuccess(`Property attribute "${definition.label}" updated.`);
-            } else {
-                definition = await createPropertyAttributeDefinition(payload);
-                setData((current) => ({
-                    ...current,
-                    attributeDefinitions: sortPropertyAttributeDefinitions([definition, ...current.attributeDefinitions]),
-                }));
-                showSuccess(`Property attribute "${definition.label}" created.`);
-            }
+            const definition = await createPropertyAttributeDefinition(payload);
+            setData((current) => ({
+                ...current,
+                attributeDefinitions: sortPropertyAttributeDefinitions([definition, ...current.attributeDefinitions]),
+            }));
+            showSuccess(`Property attribute "${definition.label}" created.`);
 
             setAttributeForm(emptyAttributeForm);
-            setEditingAttributeId(null);
         } catch (error) {
             showError(error.message);
         } finally {
@@ -341,50 +314,142 @@ export default function Settings() {
         }
     }
 
+    async function handleUpdateProjectDetails(projectId, formState) {
+        setSavingProject(true);
+        try {
+            const project = await updateProject(projectId, { project_name: formState.project_name });
+            const hydratedProject = {
+                ...project,
+                communities: project.communities || data.projects.find((item) => item.project_id === project.project_id)?.communities || [],
+            };
+            setData((current) => ({
+                ...current,
+                projects: sortProjects(current.projects.map((item) => (item.project_id === hydratedProject.project_id ? hydratedProject : item))),
+            }));
+            setEditingProjectId(null);
+            showSuccess(`Project "${project.project_name}" updated.`);
+            return { success: true };
+        } catch (error) {
+            showError(error.message);
+            return { success: false, error: error.message };
+        } finally {
+            setSavingProject(false);
+        }
+    }
+
+    async function handleUpdateCommunityDetails(target, formState) {
+        if (!target) {
+            return { success: false, error: 'Community not found.' };
+        }
+
+        setSavingCommunity(true);
+        try {
+            const layout_plan_path = formState.file ? await uploadImage('projects', formState.file) : formState.existing_layout_plan_path;
+            const community = await updateCommunity(target.project_id, target.community_id, {
+                community_name: formState.community_name,
+                layout_plan_path,
+            });
+            setData((current) => ({
+                ...current,
+                projects: current.projects.map((project) => (
+                    project.project_id === target.project_id
+                        ? {
+                            ...project,
+                            communities: (project.communities || [])
+                                .map((item) => (item.community_id === community.community_id ? community : item))
+                                .sort((left, right) => left.community_name.localeCompare(right.community_name)),
+                        }
+                        : project
+                )),
+            }));
+            setEditingCommunity(null);
+            showSuccess(`Community "${community.community_name}" updated.`);
+            return { success: true };
+        } catch (error) {
+            showError(error.message);
+            return { success: false, error: error.message };
+        } finally {
+            setSavingCommunity(false);
+        }
+    }
+
+    async function handleUpdatePlanDetails(planId, formState) {
+        setSavingPlan(true);
+        try {
+            const floor_plan_image_path = formState.file ? await uploadImage('plans', formState.file) : formState.existing_floor_plan_image_path;
+            const payload = {
+                project_id: Number(formState.project_id),
+                community_id: formState.community_id ? Number(formState.community_id) : null,
+                plan_name: formState.plan_name,
+                number_of_rooms: formState.number_of_rooms ? Number(formState.number_of_rooms) : null,
+                square_footage: formState.square_footage ? Number(formState.square_footage) : null,
+                amenities: formState.amenities || null,
+                floor_plan_image_path,
+            };
+            const plan = await updateFloorPlan(planId, payload);
+            setData((current) => ({
+                ...current,
+                plans: sortFloorPlans(current.plans.map((item) => (item.plan_id === plan.plan_id ? plan : item))),
+            }));
+            setEditingPlanId(null);
+            showSuccess(`Floor plan "${plan.plan_name}" updated.`);
+            return { success: true };
+        } catch (error) {
+            showError(error.message);
+            return { success: false, error: error.message };
+        } finally {
+            setSavingPlan(false);
+        }
+    }
+
+    async function handleUpdateAttributeDetails(attributeDefinitionId, formState) {
+        setSavingAttribute(true);
+        try {
+            const payload = {
+                label: formState.label.trim(),
+                key: formState.key.trim() || null,
+                value_type: formState.value_type,
+                options: formState.value_type === 'select' ? parseAttributeOptions(formState.options) : [],
+                sort_order: Number.isFinite(Number(formState.sort_order)) ? Number(formState.sort_order) : 0,
+                is_active: formState.is_active,
+            };
+
+            if (!payload.label) {
+                throw new Error('Attribute label is required.');
+            }
+
+            const definition = await updatePropertyAttributeDefinition(attributeDefinitionId, payload);
+            setData((current) => ({
+                ...current,
+                attributeDefinitions: sortPropertyAttributeDefinitions(current.attributeDefinitions.map((item) => (
+                    item.attribute_definition_id === definition.attribute_definition_id ? definition : item
+                ))),
+            }));
+            setEditingAttributeId(null);
+            showSuccess(`Property attribute "${definition.label}" updated.`);
+            return { success: true };
+        } catch (error) {
+            showError(error.message);
+            return { success: false, error: error.message };
+        } finally {
+            setSavingAttribute(false);
+        }
+    }
+
     function startEditingProject(project) {
         setEditingProjectId(project.project_id);
-        setProjectForm({ project_name: project.project_name || '' });
     }
 
     function startEditingCommunity(projectId, community) {
         setEditingCommunity({ project_id: projectId, community_id: community.community_id });
-        setCommunityForm({
-            project_id: String(projectId),
-            community_name: community.community_name || '',
-            file: null,
-            existing_layout_plan_path: community.layout_plan_path || null,
-        });
     }
 
     function startEditingPlan(plan) {
         setEditingPlanId(plan.plan_id);
-        setPlanForm({
-            project_id: String(plan.project_id || ''),
-            community_id: plan.community_id ? String(plan.community_id) : '',
-            plan_name: plan.plan_name || '',
-            number_of_rooms: plan.number_of_rooms ?? '',
-            square_footage: plan.square_footage ?? '',
-            amenities: plan.amenities || '',
-            file: null,
-            existing_floor_plan_image_path: plan.floor_plan_image_path || null,
-        });
     }
 
     function startEditingAttribute(definition) {
         setEditingAttributeId(definition.attribute_definition_id);
-        setAttributeForm({
-            label: definition.label || '',
-            key: definition.key || '',
-            value_type: definition.value_type || 'boolean',
-            options: (definition.options || []).join(', '),
-            sort_order: String(definition.sort_order ?? 0),
-            is_active: !!definition.is_active,
-        });
-    }
-
-    function resetAttributeEditor() {
-        setEditingAttributeId(null);
-        setAttributeForm(emptyAttributeForm);
     }
 
     async function handleSaveUser(event) {
@@ -582,19 +647,16 @@ export default function Settings() {
             {activeTab === 'assets' && (
                 <div className="space-y-8">
                     <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-                        <Card title={editingProjectId ? 'Edit Project' : 'Add New Project'} subtitle={editingProjectId ? 'Rename the project if it was created with incomplete details.' : 'Create the top-level development that will contain multiple communities.'}>
+                        <Card title="Add New Project" subtitle="Create the top-level development that will contain multiple communities.">
                             <form className="space-y-4" onSubmit={handleSaveProject}>
                                 <input type="text" required placeholder="Project Name" value={projectForm.project_name} onChange={(event) => setProjectForm((current) => ({ ...current, project_name: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
-                                <div className="flex items-center gap-3">
-                                    <button type="submit" disabled={savingProject} className="flex-1 rounded-xl bg-gray-900 py-3 text-sm font-bold text-white shadow-xl disabled:opacity-60">{savingProject ? 'Saving project...' : editingProjectId ? 'Save Project' : 'Create Project'}</button>
-                                    {editingProjectId && <button type="button" onClick={() => { setEditingProjectId(null); setProjectForm(emptyProjectForm); }} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-bold text-gray-600"><X className="h-4 w-4" />Cancel</button>}
-                                </div>
+                                <button type="submit" disabled={savingProject} className="w-full rounded-xl bg-gray-900 py-3 text-sm font-bold text-white shadow-xl disabled:opacity-60">{savingProject ? 'Saving project...' : 'Create Project'}</button>
                             </form>
                         </Card>
 
-                        <Card title={editingCommunity ? 'Edit Community' : 'Add Community'} subtitle={editingCommunity ? 'Update the community name or replace its layout asset.' : 'A single project can own multiple communities or clusters, each with its own layout asset.'}>
+                        <Card title="Add Community" subtitle="A single project can own multiple communities or clusters, each with its own layout asset.">
                             <form className="space-y-4" onSubmit={handleSaveCommunity}>
-                                <select required value={communityForm.project_id} onChange={(event) => setCommunityForm((current) => ({ ...current, project_id: event.target.value }))} disabled={!!editingCommunity} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none disabled:opacity-50"><option value="">Select Project...</option>{data.projects.map((project) => <option key={project.project_id} value={project.project_id}>{project.project_name}</option>)}</select>
+                                <select required value={communityForm.project_id} onChange={(event) => setCommunityForm((current) => ({ ...current, project_id: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option value="">Select Project...</option>{data.projects.map((project) => <option key={project.project_id} value={project.project_id}>{project.project_name}</option>)}</select>
                                 <input type="text" required placeholder="Community Name" value={communityForm.community_name} onChange={(event) => setCommunityForm((current) => ({ ...current, community_name: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
                                 <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-gray-200 p-4 text-sm font-semibold text-gray-600"><Upload className="h-4 w-4 text-brand-600" />Upload community layout asset (image or PDF, up to 20 MB)<input type="file" accept="image/*,.pdf,application/pdf" className="hidden" onChange={(event) => setCommunityForm((current) => ({ ...current, file: event.target.files?.[0] || null }))} /></label>
                                 <AssetReference
@@ -603,15 +665,12 @@ export default function Settings() {
                                     file={communityForm.file}
                                     emptyMessage="Upload a community layout to see its preview here."
                                 />
-                                <div className="flex items-center gap-3">
-                                    <button type="submit" disabled={savingCommunity || data.projects.length === 0} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand-600 py-3 text-sm font-bold text-white shadow-lg shadow-brand-500/20 disabled:opacity-60"><MapPinned className="h-4 w-4" />{savingCommunity ? 'Saving community...' : editingCommunity ? 'Save Community' : 'Add Community'}</button>
-                                    {editingCommunity && <button type="button" onClick={() => { setEditingCommunity(null); setCommunityForm(emptyCommunityForm); }} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-bold text-gray-600"><X className="h-4 w-4" />Cancel</button>}
-                                </div>
+                                <button type="submit" disabled={savingCommunity || data.projects.length === 0} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-3 text-sm font-bold text-white shadow-lg shadow-brand-500/20 disabled:opacity-60"><MapPinned className="h-4 w-4" />{savingCommunity ? 'Saving community...' : 'Add Community'}</button>
                                 {data.projects.length === 0 && <p className="text-sm font-medium text-gray-500">Create a project first, then add its communities here.</p>}
                             </form>
                         </Card>
 
-                        <Card title={editingPlanId ? 'Edit Floor Plan' : 'Add Floor Plan'} subtitle={editingPlanId ? 'Finish or correct the plan details without creating a duplicate record.' : 'Attach a plan to a whole project or narrow it to one community.'}>
+                        <Card title="Add Floor Plan" subtitle="Attach a plan to a whole project or narrow it to one community.">
                             <form className="space-y-4" onSubmit={handleSavePlan}>
                                 <select required value={planForm.project_id} onChange={(event) => setPlanForm((current) => ({ ...current, project_id: event.target.value, community_id: '' }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option value="">Select Project...</option>{data.projects.map((project) => <option key={project.project_id} value={project.project_id}>{project.project_name}</option>)}</select>
                                 <select value={planForm.community_id} onChange={(event) => setPlanForm((current) => ({ ...current, community_id: event.target.value }))} disabled={!planForm.project_id} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none disabled:opacity-50"><option value="">All communities in this project</option>{availablePlanCommunities.map((community) => <option key={community.community_id} value={community.community_id}>{community.community_name}</option>)}</select>
@@ -628,19 +687,16 @@ export default function Settings() {
                                     file={planForm.file}
                                     emptyMessage="Upload a floor plan image or PDF to preview it here."
                                 />
-                                <div className="flex items-center gap-3">
-                                    <button type="submit" disabled={savingPlan} className="flex-1 rounded-xl bg-gray-900 py-3 text-sm font-bold text-white shadow-xl disabled:opacity-60">{savingPlan ? 'Saving floor plan...' : editingPlanId ? 'Save Floor Plan' : 'Create Floor Plan'}</button>
-                                    {editingPlanId && <button type="button" onClick={() => { setEditingPlanId(null); setPlanForm(emptyPlanForm); }} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-bold text-gray-600"><X className="h-4 w-4" />Cancel</button>}
-                                </div>
+                                <button type="submit" disabled={savingPlan} className="w-full rounded-xl bg-gray-900 py-3 text-sm font-bold text-white shadow-xl disabled:opacity-60">{savingPlan ? 'Saving floor plan...' : 'Create Floor Plan'}</button>
                             </form>
                         </Card>
 
-                        <Card title={editingAttributeId ? 'Edit Property Attribute' : 'Add Property Attribute'} subtitle={editingAttributeId ? 'Adjust the configurable flag without touching fixed property identity fields.' : 'Create the flexible flags and values that appear in property forms.'}>
+                        <Card title="Add Property Attribute" subtitle="Create the flexible flags and values that appear in property forms.">
                             <form className="space-y-4" onSubmit={handleSaveAttribute}>
                                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                                     <input type="text" required placeholder="Label" value={attributeForm.label} onChange={(event) => setAttributeForm((current) => ({ ...current, label: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
-                                    <input type="text" placeholder="Key (optional)" value={attributeForm.key} onChange={(event) => setAttributeForm((current) => ({ ...current, key: event.target.value }))} disabled={!!editingAttribute?.is_system} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none disabled:opacity-50" />
-                                    <select value={attributeForm.value_type} onChange={(event) => setAttributeForm((current) => ({ ...current, value_type: event.target.value, options: event.target.value === 'select' ? current.options : '' }))} disabled={!!editingAttribute?.is_system} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none disabled:opacity-50">
+                                    <input type="text" placeholder="Key (optional)" value={attributeForm.key} onChange={(event) => setAttributeForm((current) => ({ ...current, key: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                                    <select value={attributeForm.value_type} onChange={(event) => setAttributeForm((current) => ({ ...current, value_type: event.target.value, options: event.target.value === 'select' ? current.options : '' }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none">
                                         <option value="boolean">Boolean flag</option>
                                         <option value="text">Text</option>
                                         <option value="number">Number</option>
@@ -659,15 +715,10 @@ export default function Settings() {
                                 </label>
 
                                 <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 text-sm font-medium text-gray-600">
-                                    {editingAttribute?.is_system
-                                        ? 'This is a system-backed attribute migrated from the old fixed-flag model. Its key and value type stay locked so existing data remains stable.'
-                                        : 'Use boolean flags for simple yes or no fields, or use text, number, and select when a property needs richer metadata.'}
+                                    Use boolean flags for simple yes or no fields, or use text, number, and select when a property needs richer metadata.
                                 </div>
 
-                                <div className="flex items-center gap-3">
-                                    <button type="submit" disabled={savingAttribute} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-gray-900 py-3 text-sm font-bold text-white shadow-xl disabled:opacity-60"><SlidersHorizontal className="h-4 w-4" />{savingAttribute ? 'Saving attribute...' : editingAttributeId ? 'Save Attribute' : 'Create Attribute'}</button>
-                                    {editingAttributeId && <button type="button" onClick={resetAttributeEditor} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-bold text-gray-600"><X className="h-4 w-4" />Cancel</button>}
-                                </div>
+                                <button type="submit" disabled={savingAttribute} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gray-900 py-3 text-sm font-bold text-white shadow-xl disabled:opacity-60"><SlidersHorizontal className="h-4 w-4" />{savingAttribute ? 'Saving attribute...' : 'Create Attribute'}</button>
                             </form>
                         </Card>
                     </div>
@@ -908,6 +959,41 @@ export default function Settings() {
                     )}
                 </Card>
             )}
+
+            <ProjectEditDrawer
+                isOpen={!!editingProject}
+                project={editingProject}
+                onClose={() => setEditingProjectId(null)}
+                onSubmit={handleUpdateProjectDetails}
+                isSubmitting={savingProject}
+            />
+
+            <CommunityEditDrawer
+                isOpen={!!editingCommunityRecord}
+                projectId={editingCommunity?.project_id || null}
+                projects={data.projects}
+                community={editingCommunityRecord}
+                onClose={() => setEditingCommunity(null)}
+                onSubmit={handleUpdateCommunityDetails}
+                isSubmitting={savingCommunity}
+            />
+
+            <FloorPlanEditDrawer
+                isOpen={!!editingPlan}
+                plan={editingPlan}
+                projects={data.projects}
+                onClose={() => setEditingPlanId(null)}
+                onSubmit={handleUpdatePlanDetails}
+                isSubmitting={savingPlan}
+            />
+
+            <PropertyAttributeEditDrawer
+                isOpen={!!editingAttribute}
+                definition={editingAttribute}
+                onClose={() => setEditingAttributeId(null)}
+                onSubmit={handleUpdateAttributeDetails}
+                isSubmitting={savingAttribute}
+            />
         </div>
     );
 }
@@ -923,6 +1009,317 @@ function SearchInput({ value, onChange, placeholder }) {
                 placeholder={placeholder}
                 className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-4 text-sm outline-none"
             />
+        </div>
+    );
+}
+
+function SettingsEditDrawer({ isOpen, onClose, title, subtitle, children, maxWidth = 'max-w-lg' }) {
+    if (!isOpen) {
+        return null;
+    }
+
+    return (
+        <div className="fixed inset-0 z-50 overflow-hidden">
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+
+            <div className={`absolute inset-y-0 right-0 flex w-full ${maxWidth} flex-col bg-white shadow-2xl`}>
+                <div className="flex items-center justify-between border-b border-gray-100 bg-brand-900 p-6 text-white">
+                    <div>
+                        <h2 className="text-lg font-bold uppercase tracking-tight">{title}</h2>
+                        {subtitle && <p className="mt-1 text-sm font-medium text-white/70">{subtitle}</p>}
+                    </div>
+                    <button type="button" onClick={onClose} className="rounded-full p-2 hover:bg-white/10">
+                        <X className="h-5 w-5" />
+                    </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-6">
+                    {children}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function ProjectEditDrawer({ isOpen, project, onClose, onSubmit, isSubmitting }) {
+    const [form, setForm] = useState(emptyProjectForm);
+    const [submitError, setSubmitError] = useState('');
+
+    useEffect(() => {
+        if (isOpen && project) {
+            setForm({ project_name: project.project_name || '' });
+            setSubmitError('');
+        }
+    }, [isOpen, project]);
+
+    async function handleSubmit(event) {
+        event.preventDefault();
+        if (!project) {
+            return;
+        }
+
+        const result = await onSubmit(project.project_id, form);
+        if (!result?.success) {
+            setSubmitError(result?.error || 'Unable to update this project.');
+            return;
+        }
+
+        onClose();
+    }
+
+    return (
+        <SettingsEditDrawer
+            isOpen={isOpen}
+            onClose={onClose}
+            title="Edit Project"
+            subtitle="Rename the project without changing the creation form on the main screen."
+        >
+            <form className="space-y-4" onSubmit={handleSubmit}>
+                <input
+                    type="text"
+                    required
+                    placeholder="Project Name"
+                    value={form.project_name}
+                    onChange={(event) => setForm({ project_name: event.target.value })}
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"
+                />
+                {submitError && <DrawerError message={submitError} />}
+                <button type="submit" disabled={isSubmitting} className="w-full rounded-xl bg-brand-600 py-3 text-sm font-bold text-white shadow-lg shadow-brand-500/20 disabled:opacity-60">
+                    {isSubmitting ? 'Saving project...' : 'Save Project'}
+                </button>
+            </form>
+        </SettingsEditDrawer>
+    );
+}
+
+function CommunityEditDrawer({ isOpen, projectId, projects, community, onClose, onSubmit, isSubmitting }) {
+    const [form, setForm] = useState(emptyCommunityForm);
+    const [submitError, setSubmitError] = useState('');
+
+    useEffect(() => {
+        if (isOpen && community) {
+            setForm({
+                project_id: String(projectId || ''),
+                community_name: community.community_name || '',
+                file: null,
+                existing_layout_plan_path: community.layout_plan_path || null,
+            });
+            setSubmitError('');
+        }
+    }, [community, isOpen, projectId]);
+
+    async function handleSubmit(event) {
+        event.preventDefault();
+        if (!community || !projectId) {
+            return;
+        }
+
+        const result = await onSubmit({ project_id: projectId, community_id: community.community_id }, form);
+        if (!result?.success) {
+            setSubmitError(result?.error || 'Unable to update this community.');
+            return;
+        }
+
+        onClose();
+    }
+
+    return (
+        <SettingsEditDrawer
+            isOpen={isOpen}
+            onClose={onClose}
+            title="Edit Community"
+            subtitle="Review the saved layout asset and replace it only if needed."
+        >
+            <form className="space-y-4" onSubmit={handleSubmit}>
+                <div className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3">
+                    <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Project</p>
+                    <p className="mt-2 text-sm font-bold text-gray-900">{getProjectName(projects, projectId)}</p>
+                </div>
+                <input
+                    type="text"
+                    required
+                    placeholder="Community Name"
+                    value={form.community_name}
+                    onChange={(event) => setForm((current) => ({ ...current, community_name: event.target.value }))}
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"
+                />
+                <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-gray-200 p-4 text-sm font-semibold text-gray-600">
+                    <Upload className="h-4 w-4 text-brand-600" />
+                    Replace community layout asset (image or PDF, up to 20 MB)
+                    <input
+                        type="file"
+                        accept="image/*,.pdf,application/pdf"
+                        className="hidden"
+                        onChange={(event) => setForm((current) => ({ ...current, file: event.target.files?.[0] || null }))}
+                    />
+                </label>
+                <AssetReference
+                    title="Community layout preview"
+                    assetPath={form.existing_layout_plan_path}
+                    file={form.file}
+                    emptyMessage="Upload a community layout to see its preview here."
+                />
+                {submitError && <DrawerError message={submitError} />}
+                <button type="submit" disabled={isSubmitting} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-3 text-sm font-bold text-white shadow-lg shadow-brand-500/20 disabled:opacity-60">
+                    <MapPinned className="h-4 w-4" />
+                    {isSubmitting ? 'Saving community...' : 'Save Community'}
+                </button>
+            </form>
+        </SettingsEditDrawer>
+    );
+}
+
+function FloorPlanEditDrawer({ isOpen, plan, projects, onClose, onSubmit, isSubmitting }) {
+    const [form, setForm] = useState(emptyPlanForm);
+    const [submitError, setSubmitError] = useState('');
+
+    useEffect(() => {
+        if (isOpen && plan) {
+            setForm({
+                project_id: String(plan.project_id || ''),
+                community_id: plan.community_id ? String(plan.community_id) : '',
+                plan_name: plan.plan_name || '',
+                number_of_rooms: plan.number_of_rooms ?? '',
+                square_footage: plan.square_footage ?? '',
+                amenities: plan.amenities || '',
+                file: null,
+                existing_floor_plan_image_path: plan.floor_plan_image_path || null,
+            });
+            setSubmitError('');
+        }
+    }, [isOpen, plan]);
+
+    const availableCommunities = getProjectCommunities(projects, form.project_id);
+
+    async function handleSubmit(event) {
+        event.preventDefault();
+        if (!plan) {
+            return;
+        }
+
+        const result = await onSubmit(plan.plan_id, form);
+        if (!result?.success) {
+            setSubmitError(result?.error || 'Unable to update this floor plan.');
+            return;
+        }
+
+        onClose();
+    }
+
+    return (
+        <SettingsEditDrawer
+            isOpen={isOpen}
+            onClose={onClose}
+            title="Edit Floor Plan"
+            subtitle="Cross-check the existing floor plan asset and update the plan details without creating a duplicate."
+        >
+            <form className="space-y-4" onSubmit={handleSubmit}>
+                <select required value={form.project_id} onChange={(event) => setForm((current) => ({ ...current, project_id: event.target.value, community_id: '' }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none"><option value="">Select Project...</option>{projects.map((project) => <option key={project.project_id} value={project.project_id}>{project.project_name}</option>)}</select>
+                <select value={form.community_id} onChange={(event) => setForm((current) => ({ ...current, community_id: event.target.value }))} disabled={!form.project_id} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none disabled:opacity-50"><option value="">All communities in this project</option>{availableCommunities.map((community) => <option key={community.community_id} value={community.community_id}>{community.community_name}</option>)}</select>
+                <input type="text" required placeholder="Plan Name" value={form.plan_name} onChange={(event) => setForm((current) => ({ ...current, plan_name: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                <div className="grid grid-cols-2 gap-4">
+                    <input type="number" placeholder="Rooms" value={form.number_of_rooms} onChange={(event) => setForm((current) => ({ ...current, number_of_rooms: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                    <input type="number" placeholder="Square footage" value={form.square_footage} onChange={(event) => setForm((current) => ({ ...current, square_footage: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                </div>
+                <textarea rows={3} placeholder="Amenities" value={form.amenities} onChange={(event) => setForm((current) => ({ ...current, amenities: event.target.value }))} className="w-full rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm outline-none" />
+                <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-gray-200 p-4 text-sm font-semibold text-gray-600"><Upload className="h-4 w-4 text-brand-600" />Replace floor plan asset (image or PDF, up to 20 MB)<input type="file" accept="image/*,.pdf,application/pdf" className="hidden" onChange={(event) => setForm((current) => ({ ...current, file: event.target.files?.[0] || null }))} /></label>
+                <AssetReference
+                    title="Floor plan preview"
+                    assetPath={form.existing_floor_plan_image_path}
+                    file={form.file}
+                    emptyMessage="Upload a floor plan image or PDF to preview it here."
+                />
+                {submitError && <DrawerError message={submitError} />}
+                <button type="submit" disabled={isSubmitting} className="w-full rounded-xl bg-brand-600 py-3 text-sm font-bold text-white shadow-lg shadow-brand-500/20 disabled:opacity-60">
+                    {isSubmitting ? 'Saving floor plan...' : 'Save Floor Plan'}
+                </button>
+            </form>
+        </SettingsEditDrawer>
+    );
+}
+
+function PropertyAttributeEditDrawer({ isOpen, definition, onClose, onSubmit, isSubmitting }) {
+    const [form, setForm] = useState(emptyAttributeForm);
+    const [submitError, setSubmitError] = useState('');
+
+    useEffect(() => {
+        if (isOpen && definition) {
+            setForm({
+                label: definition.label || '',
+                key: definition.key || '',
+                value_type: definition.value_type || 'boolean',
+                options: (definition.options || []).join(', '),
+                sort_order: String(definition.sort_order ?? 0),
+                is_active: !!definition.is_active,
+            });
+            setSubmitError('');
+        }
+    }, [definition, isOpen]);
+
+    async function handleSubmit(event) {
+        event.preventDefault();
+        if (!definition) {
+            return;
+        }
+
+        const result = await onSubmit(definition.attribute_definition_id, form);
+        if (!result?.success) {
+            setSubmitError(result?.error || 'Unable to update this property attribute.');
+            return;
+        }
+
+        onClose();
+    }
+
+    return (
+        <SettingsEditDrawer
+            isOpen={isOpen}
+            onClose={onClose}
+            title="Edit Property Attribute"
+            subtitle="Update the configurable field without changing the separate add form."
+        >
+            <form className="space-y-4" onSubmit={handleSubmit}>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <input type="text" required placeholder="Label" value={form.label} onChange={(event) => setForm((current) => ({ ...current, label: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                    <input type="text" placeholder="Key (optional)" value={form.key} onChange={(event) => setForm((current) => ({ ...current, key: event.target.value }))} disabled={!!definition?.is_system} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none disabled:opacity-50" />
+                    <select value={form.value_type} onChange={(event) => setForm((current) => ({ ...current, value_type: event.target.value, options: event.target.value === 'select' ? current.options : '' }))} disabled={!!definition?.is_system} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none disabled:opacity-50">
+                        <option value="boolean">Boolean flag</option>
+                        <option value="text">Text</option>
+                        <option value="number">Number</option>
+                        <option value="select">Select list</option>
+                    </select>
+                    <input type="number" placeholder="Display order" value={form.sort_order} onChange={(event) => setForm((current) => ({ ...current, sort_order: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
+                </div>
+
+                {form.value_type === 'select' && (
+                    <textarea rows={3} placeholder="Options, separated by commas or new lines" value={form.options} onChange={(event) => setForm((current) => ({ ...current, options: event.target.value }))} className="w-full rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm outline-none" />
+                )}
+
+                <label className="inline-flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-700">
+                    <input type="checkbox" checked={form.is_active} onChange={(event) => setForm((current) => ({ ...current, is_active: event.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
+                    Show this attribute in active property forms
+                </label>
+
+                <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 text-sm font-medium text-gray-600">
+                    {definition?.is_system
+                        ? 'This is a system-backed attribute migrated from the old fixed-flag model. Its key and value type stay locked so existing data remains stable.'
+                        : 'Use boolean flags for simple yes or no fields, or use text, number, and select when a property needs richer metadata.'}
+                </div>
+
+                {submitError && <DrawerError message={submitError} />}
+                <button type="submit" disabled={isSubmitting} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-3 text-sm font-bold text-white shadow-lg shadow-brand-500/20 disabled:opacity-60">
+                    <SlidersHorizontal className="h-4 w-4" />
+                    {isSubmitting ? 'Saving attribute...' : 'Save Attribute'}
+                </button>
+            </form>
+        </SettingsEditDrawer>
+    );
+}
+
+function DrawerError({ message }) {
+    return (
+        <div className="rounded-xl border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">
+            {message}
         </div>
     );
 }
