@@ -1,5 +1,6 @@
 # backend/api/customers.py
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -32,6 +33,8 @@ def get_customers(
     skip: int = 0,
     limit: int = 100,
     q: str | None = Query(default=None),
+    client_type: str | None = Query(default=None),
+    protected_only: bool | None = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user) # Protects the route
 ):
@@ -44,6 +47,15 @@ def get_customers(
             | (Customer.last_name.ilike(term))
             | (Customer.email.ilike(term))
             | (Customer.phone_number.ilike(term))
+        )
+    if client_type:
+        query = query.filter(Customer.client_type.ilike(client_type.strip()))
+    if protected_only is True:
+        query = query.filter(
+            or_(
+                Customer.assigned_buyer_agent_id.isnot(None),
+                Customer.assigned_seller_agent_id.isnot(None),
+            )
         )
 
     total = query.count()

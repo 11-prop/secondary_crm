@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowRight, Pencil, Plus, RefreshCw, Search, Users } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 import { createCustomer, listAgents, listCustomers, updateCustomer } from '../api/resources';
 import AddCustomerDrawer from '../components/AddCustomerDrawer';
@@ -11,8 +11,10 @@ import { formatCustomerInitials, formatCustomerName, getClientTypeClasses } from
 const DEFAULT_PAGE_SIZE = 25;
 
 export default function Customers() {
-    const [searchTerm, setSearchTerm] = useState('');
-    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+    const [searchParams, setSearchParams] = useSearchParams();
+    const initialSearchTerm = searchParams.get('q') ?? '';
+    const [searchTerm, setSearchTerm] = useState(initialSearchTerm);
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(initialSearchTerm.trim());
     const [customers, setCustomers] = useState([]);
     const [agents, setAgents] = useState([]);
     const [meta, setMeta] = useState({ total_records: 0, total_pages: 1, current_page: 1, limit: DEFAULT_PAGE_SIZE });
@@ -23,6 +25,7 @@ export default function Customers() {
     const [isDrawerOpen, setDrawerOpen] = useState(false);
     const [editingCustomer, setEditingCustomer] = useState(null);
     const [error, setError] = useState('');
+    const [protectedOnly, setProtectedOnly] = useState(searchParams.get('protected') === 'true');
 
     useEffect(() => {
         const timeoutId = window.setTimeout(() => {
@@ -37,8 +40,35 @@ export default function Customers() {
     }, []);
 
     useEffect(() => {
+        const nextSearchTerm = searchParams.get('q') ?? '';
+        const nextProtectedOnly = searchParams.get('protected') === 'true';
+
+        if (nextSearchTerm !== searchTerm) {
+            setSearchTerm(nextSearchTerm);
+            setDebouncedSearchTerm(nextSearchTerm.trim());
+            setCurrentPage(1);
+        }
+
+        if (nextProtectedOnly !== protectedOnly) {
+            setProtectedOnly(nextProtectedOnly);
+            setCurrentPage(1);
+        }
+    }, [protectedOnly, searchParams, searchTerm]);
+
+    useEffect(() => {
+        const nextParams = new URLSearchParams();
+        if (debouncedSearchTerm) {
+            nextParams.set('q', debouncedSearchTerm);
+        }
+        if (protectedOnly) {
+            nextParams.set('protected', 'true');
+        }
+        setSearchParams(nextParams, { replace: true });
+    }, [debouncedSearchTerm, protectedOnly, setSearchParams]);
+
+    useEffect(() => {
         loadCustomers({ page: currentPage, limit: pageSize, search: debouncedSearchTerm });
-    }, [currentPage, pageSize, debouncedSearchTerm]);
+    }, [currentPage, pageSize, debouncedSearchTerm, protectedOnly]);
 
     async function loadAgents() {
         try {
@@ -58,6 +88,7 @@ export default function Customers() {
                 skip: (page - 1) * limit,
                 limit,
                 q: search || undefined,
+                protected_only: protectedOnly || undefined,
             });
             setCustomers(customersResponse.items);
             setMeta(customersResponse.meta || { total_records: customersResponse.items.length, total_pages: 1, current_page: page, limit });
@@ -154,6 +185,20 @@ export default function Customers() {
                 subtitle="Search reaches across the full dataset, not just the customers shown on this page."
                 actions={(
                     <div className="flex items-center gap-3">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setProtectedOnly((current) => !current);
+                                setCurrentPage(1);
+                            }}
+                            className={`inline-flex h-10 items-center rounded-lg border px-4 text-sm font-bold transition-colors ${
+                                protectedOnly
+                                    ? 'border-brand-200 bg-brand-50 text-brand-700'
+                                    : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+                            }`}
+                        >
+                            Protected only
+                        </button>
                         <button
                             type="button"
                             onClick={() => { loadAgents(); loadCustomers({ page: currentPage, limit: pageSize, search: debouncedSearchTerm }); }}

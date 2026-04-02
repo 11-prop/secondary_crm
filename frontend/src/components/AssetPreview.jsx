@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 
-function isPdfAsset(src) {
+function isPdfAsset(src, fileName, mimeType) {
+    if ((mimeType || '').toLowerCase() === 'application/pdf') {
+        return true;
+    }
+
+    if (/\.pdf$/i.test(fileName || '')) {
+        return true;
+    }
+
     return /\.pdf(?:$|[?#])/i.test(src);
 }
 
@@ -17,8 +25,8 @@ function isProtectedAsset(src) {
     }
 }
 
-export default function AssetPreview({ title, src }) {
-    const pdfAsset = useMemo(() => isPdfAsset(src), [src]);
+export default function AssetPreview({ title, src, fileName = '', mimeType = '' }) {
+    const pdfAsset = useMemo(() => isPdfAsset(src, fileName, mimeType), [src, fileName, mimeType]);
     const protectedAsset = useMemo(() => isProtectedAsset(src), [src]);
     const [objectUrl, setObjectUrl] = useState(null);
     const [loadError, setLoadError] = useState('');

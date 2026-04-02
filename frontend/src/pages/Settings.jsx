@@ -1,5 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, FileSpreadsheet, KeyRound, Loader2, MapPinned, Pencil, Search, ShieldCheck, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import AssetPreview from '../components/AssetPreview';
 
 import Card from '../components/Card';
 import {
@@ -15,6 +17,7 @@ import {
     listProjects,
     listPropertyAttributeDefinitions,
     listUsers,
+    resolveAssetUrl,
     updateCommunity,
     updateFloorPlan,
     updateMyPassword,
@@ -31,9 +34,14 @@ const emptyPlanForm = { project_id: '', community_id: '', plan_name: '', number_
 const emptyAttributeForm = { label: '', key: '', value_type: 'boolean', options: '', sort_order: '0', is_active: true };
 const emptyUserForm = { full_name: '', email: '', password: '' };
 const emptyPasswordForm = { current_password: '', new_password: '', confirm_password: '' };
+const SETTINGS_TABS = ['account', 'users', 'import', 'assets'];
 
 export default function Settings() {
-    const [activeTab, setActiveTab] = useState('account');
+    const [searchParams, setSearchParams] = useSearchParams();
+    const [activeTab, setActiveTab] = useState(() => {
+        const requestedTab = searchParams.get('tab');
+        return SETTINGS_TABS.includes(requestedTab) ? requestedTab : 'account';
+    });
     const [data, setData] = useState({ projects: [], plans: [], users: [], currentUser: null, attributeDefinitions: [] });
     const [feedback, setFeedback] = useState({ error: '', success: '' });
     const [isUploading, setIsUploading] = useState(false);
@@ -60,10 +68,31 @@ export default function Settings() {
     const [editingPlanId, setEditingPlanId] = useState(null);
     const [editingAttributeId, setEditingAttributeId] = useState(null);
     const [editingUserId, setEditingUserId] = useState(null);
+    const [expandedCommunityPreviewKey, setExpandedCommunityPreviewKey] = useState(null);
+    const [expandedPlanPreviewId, setExpandedPlanPreviewId] = useState(null);
 
     useEffect(() => {
         loadSettingsData();
     }, []);
+
+    useEffect(() => {
+        const requestedTab = searchParams.get('tab');
+        const nextTab = SETTINGS_TABS.includes(requestedTab) ? requestedTab : 'account';
+        if (nextTab !== activeTab) {
+            setActiveTab(nextTab);
+        }
+    }, [activeTab, searchParams]);
+
+    function changeTab(nextTab) {
+        setActiveTab(nextTab);
+        const nextParams = new URLSearchParams(searchParams);
+        if (nextTab === 'account') {
+            nextParams.delete('tab');
+        } else {
+            nextParams.set('tab', nextTab);
+        }
+        setSearchParams(nextParams, { replace: true });
+    }
 
     const editingAttribute = useMemo(
         () => data.attributeDefinitions.find((definition) => definition.attribute_definition_id === editingAttributeId) || null,
@@ -470,7 +499,7 @@ export default function Settings() {
                 ].map(([tab, label]) => (
                     <button
                         key={tab}
-                        onClick={() => setActiveTab(tab)}
+                        onClick={() => changeTab(tab)}
                         className={`px-4 pb-4 text-sm font-bold transition-all ${activeTab === tab ? 'border-b-2 border-brand-600 text-brand-600' : 'text-gray-400 hover:text-gray-600'}`}
                     >
                         {label}
@@ -568,6 +597,12 @@ export default function Settings() {
                                 <select required value={communityForm.project_id} onChange={(event) => setCommunityForm((current) => ({ ...current, project_id: event.target.value }))} disabled={!!editingCommunity} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none disabled:opacity-50"><option value="">Select Project...</option>{data.projects.map((project) => <option key={project.project_id} value={project.project_id}>{project.project_name}</option>)}</select>
                                 <input type="text" required placeholder="Community Name" value={communityForm.community_name} onChange={(event) => setCommunityForm((current) => ({ ...current, community_name: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm outline-none" />
                                 <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-gray-200 p-4 text-sm font-semibold text-gray-600"><Upload className="h-4 w-4 text-brand-600" />Upload community layout asset (image or PDF, up to 20 MB)<input type="file" accept="image/*,.pdf,application/pdf" className="hidden" onChange={(event) => setCommunityForm((current) => ({ ...current, file: event.target.files?.[0] || null }))} /></label>
+                                <AssetReference
+                                    title="Community layout preview"
+                                    assetPath={communityForm.existing_layout_plan_path}
+                                    file={communityForm.file}
+                                    emptyMessage="Upload a community layout to see its preview here."
+                                />
                                 <div className="flex items-center gap-3">
                                     <button type="submit" disabled={savingCommunity || data.projects.length === 0} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand-600 py-3 text-sm font-bold text-white shadow-lg shadow-brand-500/20 disabled:opacity-60"><MapPinned className="h-4 w-4" />{savingCommunity ? 'Saving community...' : editingCommunity ? 'Save Community' : 'Add Community'}</button>
                                     {editingCommunity && <button type="button" onClick={() => { setEditingCommunity(null); setCommunityForm(emptyCommunityForm); }} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-bold text-gray-600"><X className="h-4 w-4" />Cancel</button>}
@@ -587,6 +622,12 @@ export default function Settings() {
                                 </div>
                                 <textarea rows={3} placeholder="Amenities" value={planForm.amenities} onChange={(event) => setPlanForm((current) => ({ ...current, amenities: event.target.value }))} className="w-full rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm outline-none" />
                                 <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-gray-200 p-4 text-sm font-semibold text-gray-600"><Upload className="h-4 w-4 text-brand-600" />Upload floor plan asset (image or PDF, up to 20 MB)<input type="file" accept="image/*,.pdf,application/pdf" className="hidden" onChange={(event) => setPlanForm((current) => ({ ...current, file: event.target.files?.[0] || null }))} /></label>
+                                <AssetReference
+                                    title="Floor plan preview"
+                                    assetPath={planForm.existing_floor_plan_image_path}
+                                    file={planForm.file}
+                                    emptyMessage="Upload a floor plan image or PDF to preview it here."
+                                />
                                 <div className="flex items-center gap-3">
                                     <button type="submit" disabled={savingPlan} className="flex-1 rounded-xl bg-gray-900 py-3 text-sm font-bold text-white shadow-xl disabled:opacity-60">{savingPlan ? 'Saving floor plan...' : editingPlanId ? 'Save Floor Plan' : 'Create Floor Plan'}</button>
                                     {editingPlanId && <button type="button" onClick={() => { setEditingPlanId(null); setPlanForm(emptyPlanForm); }} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-bold text-gray-600"><X className="h-4 w-4" />Cancel</button>}
@@ -659,7 +700,11 @@ export default function Settings() {
                                             <div className="mt-3 space-y-2">
                                                 {(project.communities || []).length === 0 ? (
                                                     <span className="inline-flex rounded-full bg-white px-3 py-1 text-xs font-bold text-gray-400 ring-1 ring-gray-200">No communities yet</span>
-                                                ) : (project.communities || []).map((community) => (
+                                                ) : (project.communities || []).map((community) => {
+                                                    const communityPreviewKey = `${project.project_id}:${community.community_id}`;
+                                                    const isPreviewExpanded = expandedCommunityPreviewKey === communityPreviewKey;
+
+                                                    return (
                                                     <div key={community.community_id} className="rounded-xl bg-white px-3 py-3 ring-1 ring-gray-200">
                                                         <div className="flex items-start justify-between gap-4">
                                                             <div>
@@ -668,17 +713,35 @@ export default function Settings() {
                                                                     {community.layout_plan_path ? 'Layout uploaded' : 'No layout yet'}
                                                                 </p>
                                                             </div>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => startEditingCommunity(project.project_id, community)}
-                                                                className="inline-flex items-center gap-1 text-xs font-bold text-brand-600 hover:text-brand-800"
-                                                            >
-                                                                <Pencil className="h-3.5 w-3.5" />
-                                                                Edit
-                                                            </button>
+                                                            <div className="flex items-center gap-3">
+                                                                {community.layout_plan_path && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setExpandedCommunityPreviewKey((current) => current === communityPreviewKey ? null : communityPreviewKey)}
+                                                                        className="text-xs font-bold text-gray-500 hover:text-gray-700"
+                                                                    >
+                                                                        {isPreviewExpanded ? 'Hide preview' : 'Preview'}
+                                                                    </button>
+                                                                )}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => startEditingCommunity(project.project_id, community)}
+                                                                    className="inline-flex items-center gap-1 text-xs font-bold text-brand-600 hover:text-brand-800"
+                                                                >
+                                                                    <Pencil className="h-3.5 w-3.5" />
+                                                                    Edit
+                                                                </button>
+                                                            </div>
                                                         </div>
+                                                        {community.layout_plan_path && isPreviewExpanded && (
+                                                            <AssetReference
+                                                                title={`${community.community_name} layout`}
+                                                                assetPath={community.layout_plan_path}
+                                                                compact
+                                                            />
+                                                        )}
                                                     </div>
-                                                ))}
+                                                )})}
                                             </div>
                                         </div>
                                     ))}
@@ -695,12 +758,13 @@ export default function Settings() {
                                         <p className="text-sm font-medium text-gray-500">{data.plans.length === 0 ? 'No floor plans have been created yet.' : 'No floor plans match this search.'}</p>
                                     ) : filteredPlans.map((plan) => {
                                         const communityName = getCommunityName(data.projects, plan.project_id, plan.community_id);
+                                        const isPreviewExpanded = expandedPlanPreviewId === plan.plan_id;
 
                                         return (
                                             <div key={plan.plan_id} className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
                                                 <div className="flex items-start justify-between gap-4">
                                                     <div className="min-w-0 flex-1">
-                                                        <p className="font-bold text-gray-900">{plan.plan_name}</p>
+                                                            <p className="font-bold text-gray-900">{plan.plan_name}</p>
                                                         <p className="mt-1 text-sm text-gray-500">
                                                             {getProjectName(data.projects, plan.project_id)}
                                                             {' - '}
@@ -709,15 +773,33 @@ export default function Settings() {
                                                         <p className="mt-1 text-sm text-gray-500">{plan.number_of_rooms || 'N/A'} rooms - {plan.square_footage || 'N/A'} sqft</p>
                                                         <p className="mt-2 line-clamp-2 text-xs font-medium text-gray-500">{plan.amenities || 'No amenities listed yet.'}</p>
                                                     </div>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => startEditingPlan(plan)}
-                                                        className="inline-flex items-center gap-1 text-sm font-bold text-brand-600 hover:text-brand-800"
-                                                    >
-                                                        <Pencil className="h-4 w-4" />
-                                                        Edit
-                                                    </button>
+                                                    <div className="flex items-center gap-3">
+                                                        {plan.floor_plan_image_path && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setExpandedPlanPreviewId((current) => current === plan.plan_id ? null : plan.plan_id)}
+                                                                className="text-xs font-bold text-gray-500 hover:text-gray-700"
+                                                            >
+                                                                {isPreviewExpanded ? 'Hide preview' : 'Preview'}
+                                                            </button>
+                                                        )}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => startEditingPlan(plan)}
+                                                            className="inline-flex items-center gap-1 text-sm font-bold text-brand-600 hover:text-brand-800"
+                                                        >
+                                                            <Pencil className="h-4 w-4" />
+                                                            Edit
+                                                        </button>
+                                                    </div>
                                                 </div>
+                                                {plan.floor_plan_image_path && isPreviewExpanded && (
+                                                    <AssetReference
+                                                        title={plan.plan_name}
+                                                        assetPath={plan.floor_plan_image_path}
+                                                        compact
+                                                    />
+                                                )}
                                             </div>
                                         );
                                     })}
@@ -840,6 +922,56 @@ function SearchInput({ value, onChange, placeholder }) {
                 onChange={(event) => onChange(event.target.value)}
                 placeholder={placeholder}
                 className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-4 text-sm outline-none"
+            />
+        </div>
+    );
+}
+
+function AssetReference({ title, assetPath = null, file = null, emptyMessage = 'No asset uploaded yet.', compact = false }) {
+    const [localPreviewUrl, setLocalPreviewUrl] = useState(null);
+
+    useEffect(() => {
+        if (!file) {
+            setLocalPreviewUrl(null);
+            return undefined;
+        }
+
+        const objectUrl = URL.createObjectURL(file);
+        setLocalPreviewUrl(objectUrl);
+
+        return () => {
+            URL.revokeObjectURL(objectUrl);
+        };
+    }, [file]);
+
+    const previewSource = file ? localPreviewUrl : resolveAssetUrl(assetPath);
+    if (file && !localPreviewUrl) {
+        return (
+            <div className={`rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-500 ${compact ? 'mt-3' : ''}`}>
+                Preparing preview...
+            </div>
+        );
+    }
+
+    if (!previewSource && !file && !assetPath) {
+        return (
+            <div className={`rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-500 ${compact ? 'mt-3' : ''}`}>
+                {emptyMessage}
+            </div>
+        );
+    }
+
+    return (
+        <div className={compact ? 'mt-3 max-w-sm space-y-2' : 'space-y-3'}>
+            <div className="flex items-center justify-between gap-3">
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">{title}</p>
+                <span className="text-xs font-semibold text-gray-500">{file ? file.name : 'Saved asset'}</span>
+            </div>
+            <AssetPreview
+                title={title}
+                src={previewSource}
+                fileName={file?.name || assetPath || ''}
+                mimeType={file?.type || ''}
             />
         </div>
     );

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, Building2, NotebookTabs, ShieldCheck, Users } from "lucide-react";
+import { ArrowRight, BriefcaseBusiness, Building2, NotebookTabs, ShieldCheck, Users } from "lucide-react";
 
 import Card from "../components/Card";
 import { listAgents, listCustomers, listNotesByCustomer, listProperties, listUsers } from "../api/resources";
@@ -15,11 +15,19 @@ const quickLinks = [
 
 export default function Dashboard() {
     const [state, setState] = useState({
-        customers: [],
-        properties: [],
-        agents: [],
-        users: [],
+        recentCustomers: [],
         recentNotes: [],
+        metrics: {
+            customersTotal: 0,
+            protectedLeadsTotal: 0,
+            protectedBuyersTotal: 0,
+            protectedSellersTotal: 0,
+            protectedBothTotal: 0,
+            propertiesTotal: 0,
+            agentsTotal: 0,
+            activeAgentsTotal: 0,
+            analystAccountsTotal: 0,
+        },
         isLoading: true,
         error: "",
     });
@@ -29,17 +37,30 @@ export default function Dashboard() {
 
         async function loadDashboard() {
             try {
-                const [customersResponse, propertiesResponse, agentsResponse, usersResponse] = await Promise.all([
-                    listCustomers({ limit: 20 }),
-                    listProperties({ limit: 50 }),
-                    listAgents(),
-                    listUsers(),
+                const [
+                    customersResponse,
+                    propertiesResponse,
+                    agentsResponse,
+                    usersResponse,
+                    protectedLeadsResponse,
+                    protectedBuyersResponse,
+                    protectedSellersResponse,
+                    protectedBothResponse,
+                ] = await Promise.all([
+                    listCustomers({ limit: 5 }),
+                    listProperties({ limit: 1 }),
+                    listAgents({ limit: 500 }),
+                    listUsers({ limit: 1 }),
+                    listCustomers({ limit: 1, protected_only: true }),
+                    listCustomers({ limit: 1, protected_only: true, client_type: "Buyer" }),
+                    listCustomers({ limit: 1, protected_only: true, client_type: "Seller" }),
+                    listCustomers({ limit: 1, protected_only: true, client_type: "Both" }),
                 ]);
 
-                const customers = customersResponse.items;
+                const recentCustomers = customersResponse.items;
                 const recentNotes = (
                     await Promise.all(
-                        customers.slice(0, 5).map(async (customer) => {
+                        recentCustomers.map(async (customer) => {
                             const notesResponse = await listNotesByCustomer(customer.customer_id);
                             return notesResponse.items;
                         }),
@@ -54,11 +75,19 @@ export default function Dashboard() {
                 }
 
                 setState({
-                    customers,
-                    properties: propertiesResponse.items,
-                    agents: agentsResponse.items,
-                    users: usersResponse.items,
+                    recentCustomers,
                     recentNotes,
+                    metrics: {
+                        customersTotal: customersResponse.meta?.total_records ?? recentCustomers.length,
+                        protectedLeadsTotal: protectedLeadsResponse.meta?.total_records ?? 0,
+                        protectedBuyersTotal: protectedBuyersResponse.meta?.total_records ?? 0,
+                        protectedSellersTotal: protectedSellersResponse.meta?.total_records ?? 0,
+                        protectedBothTotal: protectedBothResponse.meta?.total_records ?? 0,
+                        propertiesTotal: propertiesResponse.meta?.total_records ?? propertiesResponse.items.length,
+                        agentsTotal: agentsResponse.meta?.total_records ?? agentsResponse.items.length,
+                        activeAgentsTotal: agentsResponse.items.filter((agent) => agent.is_active).length,
+                        analystAccountsTotal: usersResponse.meta?.total_records ?? usersResponse.items.length,
+                    },
                     isLoading: false,
                     error: "",
                 });
@@ -68,11 +97,19 @@ export default function Dashboard() {
                 }
 
                 setState({
-                    customers: [],
-                    properties: [],
-                    agents: [],
-                    users: [],
+                    recentCustomers: [],
                     recentNotes: [],
+                    metrics: {
+                        customersTotal: 0,
+                        protectedLeadsTotal: 0,
+                        protectedBuyersTotal: 0,
+                        protectedSellersTotal: 0,
+                        protectedBothTotal: 0,
+                        propertiesTotal: 0,
+                        agentsTotal: 0,
+                        activeAgentsTotal: 0,
+                        analystAccountsTotal: 0,
+                    },
                     isLoading: false,
                     error: error.message,
                 });
@@ -85,10 +122,6 @@ export default function Dashboard() {
             isActive = false;
         };
     }, []);
-
-    const protectedLeads = state.customers.filter(
-        (customer) => customer.assigned_buyer_agent_id || customer.assigned_seller_agent_id,
-    ).length;
 
     return (
         <div className="space-y-8">
@@ -107,11 +140,51 @@ export default function Dashboard() {
                 )}
             </div>
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <DashboardStat icon={Users} label="Customers" value={state.customers.length} tone="sky" />
-                <DashboardStat icon={ShieldCheck} label="Protected Leads" value={protectedLeads} tone="emerald" />
-                <DashboardStat icon={Building2} label="Properties" value={state.properties.length} tone="amber" />
-                <DashboardStat icon={NotebookTabs} label="Analyst Accounts" value={state.users.length} tone="slate" />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+                <DashboardStat
+                    icon={Users}
+                    label="Customers"
+                    value={state.metrics.customersTotal}
+                    tone="sky"
+                    to="/customers"
+                    detailLines={["Open the full customer directory"]}
+                />
+                <DashboardStat
+                    icon={ShieldCheck}
+                    label="Protected Leads"
+                    value={state.metrics.protectedLeadsTotal}
+                    tone="emerald"
+                    to="/customers?protected=true"
+                    detailLines={[
+                        `Buyer ${state.metrics.protectedBuyersTotal}`,
+                        `Seller ${state.metrics.protectedSellersTotal}`,
+                        `Both ${state.metrics.protectedBothTotal}`,
+                    ]}
+                />
+                <DashboardStat
+                    icon={Building2}
+                    label="Properties"
+                    value={state.metrics.propertiesTotal}
+                    tone="amber"
+                    to="/properties"
+                    detailLines={["Review full inventory"]}
+                />
+                <DashboardStat
+                    icon={BriefcaseBusiness}
+                    label="Agents"
+                    value={state.metrics.agentsTotal}
+                    tone="violet"
+                    to="/agents"
+                    detailLines={[`Active ${state.metrics.activeAgentsTotal}`]}
+                />
+                <DashboardStat
+                    icon={NotebookTabs}
+                    label="Analyst Accounts"
+                    value={state.metrics.analystAccountsTotal}
+                    tone="slate"
+                    to="/settings?tab=users"
+                    detailLines={["Manage access in Settings"]}
+                />
             </div>
 
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_0.95fr]">
@@ -126,7 +199,7 @@ export default function Dashboard() {
                     ) : (
                         <div className="space-y-4">
                             {state.recentNotes.map((note) => {
-                                const customer = state.customers.find((item) => item.customer_id === note.customer_id);
+                                const customer = state.recentCustomers.find((item) => item.customer_id === note.customer_id);
                                 return (
                                     <div key={note.note_id} className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
                                         <div className="flex items-center justify-between gap-4">
@@ -167,7 +240,7 @@ export default function Dashboard() {
                         <div className="mt-3 grid grid-cols-2 gap-4 text-sm">
                             <div>
                                 <p className="text-white/60">Active agents</p>
-                                <p className="mt-1 text-2xl font-black">{state.agents.filter((agent) => agent.is_active).length}</p>
+                                <p className="mt-1 text-2xl font-black">{state.metrics.activeAgentsTotal}</p>
                             </div>
                             <div>
                                 <p className="text-white/60">Notes loaded</p>
@@ -181,21 +254,37 @@ export default function Dashboard() {
     );
 }
 
-function DashboardStat({ icon: Icon, label, value, tone }) {
+function DashboardStat({ icon: Icon, label, value, tone, to, detailLines = [] }) {
     const tones = {
         sky: "bg-sky-50 text-sky-900 ring-sky-100",
         emerald: "bg-emerald-50 text-emerald-900 ring-emerald-100",
         amber: "bg-amber-50 text-amber-900 ring-amber-100",
+        violet: "bg-violet-50 text-violet-900 ring-violet-100",
         slate: "bg-slate-100 text-slate-900 ring-slate-200",
     };
+    const Component = to ? Link : "div";
+    const componentProps = to ? { to } : {};
 
     return (
-        <div className={`rounded-3xl p-5 ring-1 ${tones[tone]}`}>
-            <div className="flex items-center justify-between">
+        <Component
+            {...componentProps}
+            className={`rounded-3xl p-5 ring-1 transition-all ${tones[tone]} ${to ? "group hover:-translate-y-0.5 hover:shadow-lg" : ""}`}
+        >
+            <div className="flex items-center justify-between gap-3">
                 <p className="text-xs font-black uppercase tracking-[0.3em] opacity-70">{label}</p>
-                <Icon className="h-5 w-5" />
+                <div className="flex items-center gap-2">
+                    <Icon className="h-5 w-5" />
+                    {to && <ArrowRight className="h-4 w-4 opacity-70 transition-transform group-hover:translate-x-1" />}
+                </div>
             </div>
             <p className="mt-5 text-3xl font-black">{value}</p>
-        </div>
+            {detailLines.length > 0 && (
+                <div className="mt-3 space-y-1 text-xs font-bold uppercase tracking-[0.2em] opacity-75">
+                    {detailLines.map((line) => (
+                        <p key={line}>{line}</p>
+                    ))}
+                </div>
+            )}
+        </Component>
     );
 }
