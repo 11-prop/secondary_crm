@@ -386,9 +386,9 @@ export default function Customer360() {
                                     </div>
                                     <div className="overflow-hidden rounded-2xl border border-gray-100">
                                         <table className="w-full text-left text-sm">
-                                            <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Transaction</th><th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Date</th><th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Price</th></tr></thead>
+                                            <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Market Transaction</th><th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Scope</th><th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Date</th><th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Price</th></tr></thead>
                                             <tbody className="divide-y divide-gray-100 bg-white">
-                                                {property.transactions.length === 0 ? <tr><td className="px-4 py-4 text-sm font-medium text-gray-500" colSpan={3}>No historical transactions recorded yet.</td></tr> : property.transactions.map((transaction) => <tr key={transaction.transaction_id}><td className="px-4 py-4 font-semibold text-gray-900">{transaction.transaction_type || 'Transaction'}</td><td className="px-4 py-4 text-gray-500">{formatDateLabel(transaction.transaction_date)}</td><td className="px-4 py-4 font-bold text-gray-900">{formatCurrency(transaction.price)}</td></tr>)}
+                                                {property.transactions.length === 0 ? <tr><td className="px-4 py-4 text-sm font-medium text-gray-500" colSpan={4}>No community market activity has been recorded for this context yet.</td></tr> : property.transactions.map((transaction) => <tr key={transaction.transaction_id}><td className="px-4 py-4"><p className="font-semibold text-gray-900">{getTransactionTitle(transaction)}</p>{transaction.transaction_group && <p className="mt-1 text-xs font-bold uppercase tracking-[0.2em] text-gray-400">{transaction.transaction_group}</p>}</td><td className="px-4 py-4 text-xs font-bold uppercase tracking-[0.2em] text-gray-500">{getTransactionScopeLabel(transaction)}</td><td className="px-4 py-4 text-gray-500">{formatTransactionDate(transaction)}</td><td className="px-4 py-4 font-bold text-gray-900">{formatCurrency(transaction.price)}</td></tr>)}
                                             </tbody>
                                         </table>
                                     </div>
@@ -555,4 +555,32 @@ function getProjectCommunities(projects, projectId) {
     }
 
     return projects.find((project) => project.project_id === normalizedProjectId)?.communities || [];
+}
+
+function getTransactionTitle(transaction) {
+    return transaction?.transaction_procedure || transaction?.transaction_type || transaction?.transaction_group || 'Transaction';
+}
+
+function getTransactionScopeLabel(transaction) {
+    if (transaction?.property_id) {
+        return 'Property';
+    }
+    if (transaction?.plan_id) {
+        return 'Plan';
+    }
+    if (transaction?.community_id) {
+        return 'Community';
+    }
+    if (transaction?.project_id) {
+        return 'Project';
+    }
+    return 'General';
+}
+
+function formatTransactionDate(transaction) {
+    if (transaction?.transaction_recorded_at) {
+        return formatDateLabel(transaction.transaction_recorded_at, true);
+    }
+
+    return formatDateLabel(transaction?.transaction_date);
 }

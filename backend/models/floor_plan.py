@@ -20,3 +20,4 @@ class FloorPlan(Base):
     project = relationship("Project", back_populates="floor_plans")
     community = relationship("Community", back_populates="floor_plans")
     properties = relationship("Property", back_populates="plan")
+    transactions = relationship("Transaction", back_populates="plan")

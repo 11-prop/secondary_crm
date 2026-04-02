@@ -92,6 +92,150 @@ def ensure_schema_updates():
                 """
             )
         )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE transactions
+                ADD COLUMN IF NOT EXISTS project_id INTEGER REFERENCES projects(project_id) ON DELETE SET NULL
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE transactions
+                ADD COLUMN IF NOT EXISTS community_id INTEGER REFERENCES communities(community_id) ON DELETE SET NULL
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE transactions
+                ADD COLUMN IF NOT EXISTS plan_id INTEGER REFERENCES floor_plans(plan_id) ON DELETE SET NULL
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE transactions
+                ADD COLUMN IF NOT EXISTS source_reference VARCHAR(100)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE transactions
+                ADD COLUMN IF NOT EXISTS transaction_recorded_at TIMESTAMP
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE transactions
+                ADD COLUMN IF NOT EXISTS transaction_group VARCHAR(100)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE transactions
+                ADD COLUMN IF NOT EXISTS transaction_procedure VARCHAR(150)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE transactions
+                ADD COLUMN IF NOT EXISTS procedure_area NUMERIC
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE transactions
+                ADD COLUMN IF NOT EXISTS actual_area NUMERIC
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE transactions
+                ADD COLUMN IF NOT EXISTS usage VARCHAR(100)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE transactions
+                ADD COLUMN IF NOT EXISTS area_name VARCHAR(150)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE transactions
+                ADD COLUMN IF NOT EXISTS property_type VARCHAR(100)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE transactions
+                ADD COLUMN IF NOT EXISTS property_sub_type VARCHAR(100)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE transactions
+                ADD COLUMN IF NOT EXISTS is_offplan BOOLEAN
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE transactions
+                ADD COLUMN IF NOT EXISTS is_freehold BOOLEAN
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE transactions
+                ADD COLUMN IF NOT EXISTS buyer_count INTEGER
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE transactions
+                ADD COLUMN IF NOT EXISTS seller_count INTEGER
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE transactions
+                ADD COLUMN IF NOT EXISTS source_metadata JSONB NOT NULL DEFAULT '{}'::jsonb
+                """
+            )
+        )
 
         for definition in LEGACY_PROPERTY_ATTRIBUTE_DEFINITIONS:
             connection.execute(
@@ -254,6 +398,43 @@ def ensure_schema_updates():
                 ),
                 {"key": key},
             )
+
+        connection.execute(
+            text(
+                """
+                UPDATE transactions t
+                SET project_id = COALESCE(t.project_id, p.project_id),
+                    community_id = COALESCE(t.community_id, p.community_id),
+                    plan_id = COALESCE(t.plan_id, p.plan_id)
+                FROM properties p
+                WHERE t.property_id = p.property_id
+                  AND (
+                      t.project_id IS NULL
+                      OR t.community_id IS NULL
+                      OR t.plan_id IS NULL
+                  )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE transactions
+                SET transaction_recorded_at = transaction_date::timestamp
+                WHERE transaction_recorded_at IS NULL
+                  AND transaction_date IS NOT NULL
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE transactions
+                SET source_metadata = '{}'::jsonb
+                WHERE source_metadata IS NULL
+                """
+            )
+        )
 
 
 def ensure_bootstrap_admin():

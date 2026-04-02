@@ -18,7 +18,7 @@ import {
 } from '../api/resources';
 import { formatCustomerName, formatDateLabel } from '../lib/formatters';
 
-const emptyTransactionForm = { transaction_date: '', transaction_type: 'Sale', price: '', notes: '' };
+const emptyTransactionForm = { transaction_date: '', transaction_type: 'Sale', price: '', notes: '', bind_to_property: false };
 const DEFAULT_PAGE_SIZE = 25;
 
 export default function Properties() {
@@ -222,11 +222,16 @@ export default function Properties() {
         if (!selectedPropertyId) return;
         setSavingTransaction(true);
         const payload = {
-            property_id: selectedPropertyId,
             transaction_date: transactionForm.transaction_date || null,
             transaction_type: transactionForm.transaction_type,
             price: transactionForm.price ? Number(transactionForm.price) : null,
             notes: transactionForm.notes || null,
+            project_id: selectedProperty?.project_id || null,
+            community_id: selectedProperty?.community_id || null,
+            plan_id: transactionForm.bind_to_property ? (selectedProperty?.plan_id || null) : null,
+            property_id: transactionForm.bind_to_property || (!selectedProperty?.community_id && !selectedProperty?.project_id)
+                ? selectedPropertyId
+                : null,
         };
         try {
             const transaction = await createTransaction(payload);
@@ -276,7 +281,7 @@ export default function Properties() {
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                 <div>
                     <h1 className="text-3xl font-black tracking-tight text-gray-900">Property Inventory</h1>
-                    <p className="mt-1 text-gray-500">Manage unit status, ownership links, and historical transactions.</p>
+                    <p className="mt-1 text-gray-500">Manage unit status, ownership links, and community market activity.</p>
                 </div>
                 <div className="flex gap-2">
                     <button type="button" onClick={() => loadInventory({ page: currentPage, limit: pageSize, search: debouncedSearchTerm, status: statusFilter, refreshReferences: true })} className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-500 hover:bg-gray-50"><RefreshCw className="h-4 w-4" /></button>

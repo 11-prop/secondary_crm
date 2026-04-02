@@ -126,11 +126,29 @@ CREATE TABLE property_attribute_values (
 -- Historical Transactions
 CREATE TABLE transactions (
     transaction_id SERIAL PRIMARY KEY,
-    property_id INTEGER REFERENCES properties(property_id) ON DELETE CASCADE,
+    property_id INTEGER REFERENCES properties(property_id) ON DELETE SET NULL,
+    project_id INTEGER REFERENCES projects(project_id) ON DELETE SET NULL,
+    community_id INTEGER REFERENCES communities(community_id) ON DELETE SET NULL,
+    plan_id INTEGER REFERENCES floor_plans(plan_id) ON DELETE SET NULL,
+    source_reference VARCHAR(100),
     transaction_date DATE,
+    transaction_recorded_at TIMESTAMP,
     transaction_type VARCHAR(50), -- Sale, Rent
+    transaction_group VARCHAR(100),
+    transaction_procedure VARCHAR(150),
     price NUMERIC,
+    procedure_area NUMERIC,
+    actual_area NUMERIC,
+    usage VARCHAR(100),
+    area_name VARCHAR(150),
+    property_type VARCHAR(100),
+    property_sub_type VARCHAR(100),
+    is_offplan BOOLEAN,
+    is_freehold BOOLEAN,
+    buyer_count INTEGER,
+    seller_count INTEGER,
     notes TEXT,
+    source_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

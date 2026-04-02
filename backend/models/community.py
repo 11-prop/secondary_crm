@@ -17,3 +17,4 @@ class Community(Base):
     project = relationship("Project", back_populates="communities")
     floor_plans = relationship("FloorPlan", back_populates="community")
     properties = relationship("Property", back_populates="community")
+    transactions = relationship("Transaction", back_populates="community")

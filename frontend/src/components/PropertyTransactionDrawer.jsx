@@ -28,7 +28,7 @@ export default function PropertyTransactionDrawer({
                     <div className="flex items-center gap-3">
                         <ReceiptText className="h-5 w-5" />
                         <div>
-                            <h2 className="text-lg font-bold uppercase tracking-tight">Manage Transactions</h2>
+                            <h2 className="text-lg font-bold uppercase tracking-tight">Manage Market Transactions</h2>
                             <p className="mt-1 text-sm font-medium text-white/70">{property.villa_number}</p>
                         </div>
                     </div>
@@ -47,6 +47,9 @@ export default function PropertyTransactionDrawer({
                                 <div className="min-w-0">
                                     <p className="text-base font-bold text-gray-900">{property.villa_number}</p>
                                     <p className="mt-1 text-sm font-medium text-gray-500">{property.project_name || 'Unassigned project'}{property.community_name ? ` - ${property.community_name}` : ''}</p>
+                                    <p className="mt-2 text-xs font-semibold uppercase tracking-[0.2em] text-brand-600">
+                                        {property.community_name ? 'New entries default to this community ledger.' : 'No community is linked, so you can attach the record directly to this property.'}
+                                    </p>
                                 </div>
                             </div>
 
@@ -94,6 +97,15 @@ export default function PropertyTransactionDrawer({
                                 className="w-full rounded-2xl border border-gray-200 bg-white p-4 text-sm outline-none"
                             />
 
+                            <label className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-700">
+                                <input
+                                    type="checkbox"
+                                    checked={Boolean(form.bind_to_property)}
+                                    onChange={(event) => onFormChange('bind_to_property', event.target.checked)}
+                                />
+                                <span>Attach this transaction specifically to {property.villa_number}</span>
+                            </label>
+
                             <div className="flex items-center gap-3">
                                 <button
                                     type="submit"
@@ -115,8 +127,8 @@ export default function PropertyTransactionDrawer({
 
                     <div className="flex min-h-0 flex-col p-6">
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Transaction Ledger</p>
-                            <p className="mt-2 text-sm font-medium text-gray-500">Keep sale and rental activity together so pricing history is easy to review.</p>
+                            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Community Ledger</p>
+                            <p className="mt-2 text-sm font-medium text-gray-500">This view combines community comps with any unit-specific transaction history linked to the selected property.</p>
                         </div>
 
                         <div className="mt-5 flex-1 space-y-4 overflow-y-auto pr-1">
@@ -127,18 +139,31 @@ export default function PropertyTransactionDrawer({
                                 </div>
                             ) : transactions.length === 0 ? (
                                 <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm font-medium text-gray-500">
-                                    No transactions recorded for this property yet.
+                                    No market transactions are recorded for this context yet.
                                 </div>
                             ) : (
                                 transactions.map((transaction) => (
                                     <div key={transaction.transaction_id} className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
                                         <div className="flex items-start justify-between gap-4">
                                             <div>
-                                                <p className="text-sm font-bold text-gray-900">{transaction.transaction_type}</p>
-                                                <p className="mt-1 text-xs font-medium text-gray-400">{formatDateLabel(transaction.transaction_date, true)}</p>
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <p className="text-sm font-bold text-gray-900">{getTransactionTitle(transaction)}</p>
+                                                    <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 ring-1 ring-gray-200">
+                                                        {getTransactionScopeLabel(transaction)}
+                                                    </span>
+                                                    {transaction.transaction_group && (
+                                                        <span className="rounded-full bg-brand-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-brand-700 ring-1 ring-brand-100">
+                                                            {transaction.transaction_group}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="mt-1 text-xs font-medium text-gray-400">{formatTransactionDate(transaction)}</p>
                                             </div>
                                             <p className="text-sm font-black text-gray-900">{formatCurrency(transaction.price)}</p>
                                         </div>
+                                        {getTransactionAreaLabel(transaction) && (
+                                            <p className="mt-3 text-xs font-bold uppercase tracking-[0.2em] text-gray-400">{getTransactionAreaLabel(transaction)}</p>
+                                        )}
                                         {transaction.notes && (
                                             <p className="mt-3 text-sm font-medium leading-relaxed text-gray-600">{transaction.notes}</p>
                                         )}
@@ -162,4 +187,57 @@ function buildPropertySummaryTags(property) {
         tags.push(...property.attribute_tags.slice(0, 4));
     }
     return tags;
+}
+
+function getTransactionTitle(transaction) {
+    return transaction?.transaction_procedure || transaction?.transaction_type || transaction?.transaction_group || 'Transaction';
+}
+
+function getTransactionScopeLabel(transaction) {
+    if (transaction?.property_id) {
+        return 'Property-specific';
+    }
+    if (transaction?.plan_id) {
+        return 'Plan comp';
+    }
+    if (transaction?.community_id) {
+        return 'Community comp';
+    }
+    if (transaction?.project_id) {
+        return 'Project comp';
+    }
+    return 'General market';
+}
+
+function getTransactionAreaLabel(transaction) {
+    const actualArea = formatAreaValue(transaction?.actual_area);
+    if (actualArea) {
+        return `Actual area ${actualArea}`;
+    }
+    const procedureArea = formatAreaValue(transaction?.procedure_area);
+    if (procedureArea) {
+        return `Procedure area ${procedureArea}`;
+    }
+    return '';
+}
+
+function formatAreaValue(value) {
+    if (value === null || value === undefined || value === '') {
+        return '';
+    }
+
+    const number = Number(value);
+    if (Number.isNaN(number)) {
+        return '';
+    }
+
+    return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(number)} sqft`;
+}
+
+function formatTransactionDate(transaction) {
+    if (transaction?.transaction_recorded_at) {
+        return formatDateLabel(transaction.transaction_recorded_at, true);
+    }
+
+    return formatDateLabel(transaction?.transaction_date);
 }
