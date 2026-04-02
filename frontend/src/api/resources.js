@@ -68,7 +68,18 @@ export function resolveAssetUrl(path) {
         return path;
     }
 
-    const apiRoot = apiClient.defaults.baseURL?.replace(/\/api\/?$/, "") || "";
+    const apiBase = (apiClient.defaults.baseURL || "").replace(/\/$/, "");
+
+    if (path.startsWith("/api/uploads/file/")) {
+        return apiBase ? `${apiBase}${path.replace(/^\/api/, "")}` : path;
+    }
+
+    if (path.startsWith("/uploads/")) {
+        const relativePath = path.replace(/^\/uploads\//, "");
+        return apiBase ? `${apiBase}/uploads/file/${relativePath}` : `/api/uploads/file/${relativePath}`;
+    }
+
+    const apiRoot = apiBase.replace(/\/api\/?$/, "");
     return `${apiRoot}${path}`;
 }
 

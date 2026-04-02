@@ -1,8 +1,10 @@
 # backend/api/uploads.py
 import os
+import mimetypes
 from pathlib import Path
 from uuid import uuid4
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi.responses import FileResponse
 
 from configs.settings import settings
 from schemas.response import APIResponse
@@ -19,6 +21,22 @@ os.makedirs(f"{UPLOAD_DIRECTORY}/projects", exist_ok=True)
 os.makedirs(f"{UPLOAD_DIRECTORY}/plans", exist_ok=True)
 ALLOWED_ASSET_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".pdf"}
 ALLOWED_ASSET_CONTENT_TYPES = {"application/pdf"}
+
+
+def resolve_upload_file(file_path: str) -> Path:
+    base_directory = Path(UPLOAD_DIRECTORY).resolve()
+    requested_path = Path(file_path.lstrip("/"))
+    resolved_path = (base_directory / requested_path).resolve()
+
+    try:
+        resolved_path.relative_to(base_directory)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Asset not found.") from exc
+
+    if not resolved_path.is_file():
+        raise HTTPException(status_code=404, detail="Asset not found.")
+
+    return resolved_path
 
 @router.post("/image", response_model=APIResponse[dict])
 def upload_image(
@@ -75,4 +93,23 @@ def upload_image(
         status_code=201,
         message="Asset uploaded successfully",
         data={"file_path": relative_path}
+    )
+
+
+@router.get("/file/{file_path:path}")
+def get_uploaded_file(
+    file_path: str,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Serve uploaded files through the API namespace so deployments that only
+    proxy `/api/` still render uploaded assets correctly.
+    """
+    resolved_path = resolve_upload_file(file_path)
+    media_type, _ = mimetypes.guess_type(str(resolved_path))
+    return FileResponse(
+        path=resolved_path,
+        filename=resolved_path.name,
+        media_type=media_type or "application/octet-stream",
+        content_disposition_type="inline",
     )

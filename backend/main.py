@@ -3,7 +3,6 @@ import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from configs.settings import settings, engine, Base, SessionLocal
 from core.property_attributes import LEGACY_PROPERTY_ATTRIBUTE_DEFINITIONS, SEEDED_LOCATION_ATTRIBUTE_DEFINITIONS
@@ -317,7 +316,6 @@ app.include_router(import_data.router, prefix="/api/import_data", tags=["Import 
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 
 os.makedirs(settings.UPLOAD_DIRECTORY, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIRECTORY), name="uploads")
 
 @app.get("/")
 def root():
