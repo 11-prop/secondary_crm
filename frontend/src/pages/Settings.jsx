@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, FileSpreadsheet, KeyRound, Loader2, MapPinned, Pencil, Search, ShieldCheck, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import AssetPreview from '../components/AssetPreview';
@@ -725,7 +725,7 @@ export default function Settings() {
 
                     <div className="grid grid-cols-1 gap-8 xl:grid-cols-3">
                         <Card title="Projects" subtitle="Each project can hold multiple communities, and search now scales better as the directory grows.">
-                            <div className="flex h-[30rem] flex-col">
+                            <div className="flex h-120 flex-col">
                                 <SearchInput value={projectSearch} onChange={setProjectSearch} placeholder="Search projects or communities..." />
                                 <p className="mt-3 text-xs font-semibold text-gray-500">Showing {filteredProjects.length} of {data.projects.length} projects.</p>
                                 <div className="mt-4 flex-1 space-y-3 overflow-y-auto pr-1">
@@ -801,7 +801,7 @@ export default function Settings() {
                         </Card>
 
                         <Card title="Floor Plans" subtitle="The card stays fixed while the plan list scrolls, so long inventories stay easy to scan.">
-                            <div className="flex h-[30rem] flex-col">
+                            <div className="flex h-120 flex-col">
                                 <SearchInput value={planSearch} onChange={setPlanSearch} placeholder="Search plans, projects, or communities..." />
                                 <p className="mt-3 text-xs font-semibold text-gray-500">Showing {filteredPlans.length} of {data.plans.length} floor plans.</p>
                                 <div className="mt-4 flex-1 space-y-3 overflow-y-auto pr-1">
@@ -859,7 +859,7 @@ export default function Settings() {
                         </Card>
 
                         <Card title="Property Attributes" subtitle="Core property identity stays fixed in the schema; this list controls the configurable flags and custom values.">
-                            <div className="flex h-[30rem] flex-col">
+                            <div className="flex h-120 flex-col">
                                 <SearchInput value={attributeSearch} onChange={setAttributeSearch} placeholder="Search labels, keys, types, or options..." />
                                 <p className="mt-3 text-xs font-semibold text-gray-500">Showing {filteredAttributeDefinitions.length} of {data.attributeDefinitions.length} attributes.</p>
                                 <div className="mt-4 flex-1 space-y-3 overflow-y-auto pr-1">
@@ -919,7 +919,7 @@ export default function Settings() {
                                 <SearchInput value={userSearch} onChange={setUserSearch} placeholder="Search analysts, emails, roles, or status..." />
                                 <p className="text-xs font-semibold text-gray-500">Showing {filteredUsers.length} of {data.users.length} users.</p>
                                 <div className="overflow-hidden rounded-2xl border border-gray-100">
-                                    <div className="max-h-[30rem] overflow-auto">
+                                    <div className="max-h-120 overflow-auto">
                                         <table className="w-full text-left text-sm">
                                             <thead className="sticky top-0 z-10 border-b border-gray-100 bg-gray-50"><tr><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Name</th><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Email</th><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Role</th><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Status</th><th className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Created</th><th className="px-6 py-3 text-right text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Actions</th></tr></thead>
                                             <tbody className="divide-y divide-gray-100 bg-white">
