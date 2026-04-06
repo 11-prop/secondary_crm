@@ -241,3 +241,7 @@ uploads/
 *.njsproj
 *.sln
 *.sw?
+
+# Headless browsers
+.chrome-headless/
+.edge-headless/
