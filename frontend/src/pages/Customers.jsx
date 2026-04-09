@@ -14,6 +14,7 @@ const DEFAULT_PAGE_SIZE = 25;
 export default function Customers() {
     const [searchParams, setSearchParams] = useSearchParams();
     const initialSearchTerm = searchParams.get('q') ?? '';
+    const initialProtectedOnly = searchParams.get('protected') === 'true';
     const [searchTerm, setSearchTerm] = useState(initialSearchTerm);
     const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(initialSearchTerm.trim());
     const [customers, setCustomers] = useState([]);
@@ -27,7 +28,7 @@ export default function Customers() {
     const [editingCustomer, setEditingCustomer] = useState(null);
     const [interactionCustomer, setInteractionCustomer] = useState(null);
     const [error, setError] = useState('');
-    const [protectedOnly, setProtectedOnly] = useState(searchParams.get('protected') === 'true');
+    const [protectedOnly, setProtectedOnly] = useState(initialProtectedOnly);
 
     useEffect(() => {
         const timeoutId = window.setTimeout(() => {
@@ -45,17 +46,11 @@ export default function Customers() {
         const nextSearchTerm = searchParams.get('q') ?? '';
         const nextProtectedOnly = searchParams.get('protected') === 'true';
 
-        if (nextSearchTerm !== searchTerm) {
-            setSearchTerm(nextSearchTerm);
-            setDebouncedSearchTerm(nextSearchTerm.trim());
-            setCurrentPage(1);
-        }
-
-        if (nextProtectedOnly !== protectedOnly) {
-            setProtectedOnly(nextProtectedOnly);
-            setCurrentPage(1);
-        }
-    }, [protectedOnly, searchParams, searchTerm]);
+        setSearchTerm((current) => (current === nextSearchTerm ? current : nextSearchTerm));
+        setDebouncedSearchTerm((current) => (current === nextSearchTerm.trim() ? current : nextSearchTerm.trim()));
+        setProtectedOnly((current) => (current === nextProtectedOnly ? current : nextProtectedOnly));
+        setCurrentPage(1);
+    }, [searchParams]);
 
     useEffect(() => {
         const nextParams = new URLSearchParams();
@@ -65,8 +60,10 @@ export default function Customers() {
         if (protectedOnly) {
             nextParams.set('protected', 'true');
         }
-        setSearchParams(nextParams, { replace: true });
-    }, [debouncedSearchTerm, protectedOnly, setSearchParams]);
+        if (nextParams.toString() !== searchParams.toString()) {
+            setSearchParams(nextParams, { replace: true });
+        }
+    }, [debouncedSearchTerm, protectedOnly, searchParams, setSearchParams]);
 
     useEffect(() => {
         loadCustomers({ page: currentPage, limit: pageSize, search: debouncedSearchTerm });
