@@ -39,6 +39,14 @@ CREATE TABLE customers (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE UNIQUE INDEX uq_customers_email_normalized
+    ON customers ((lower(btrim(email))))
+    WHERE NULLIF(btrim(email), '') IS NOT NULL;
+
+CREATE UNIQUE INDEX uq_customers_phone_normalized
+    ON customers ((regexp_replace(phone_number, '[^0-9]+', '', 'g')))
+    WHERE NULLIF(regexp_replace(COALESCE(phone_number, ''), '[^0-9]+', '', 'g'), '') IS NOT NULL;
+
 -- Interaction Notes (The Chronological Ledger)
 CREATE TABLE interaction_notes (
     note_id SERIAL PRIMARY KEY,

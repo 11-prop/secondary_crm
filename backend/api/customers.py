@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from configs.settings import get_db
+from core.customer_identity import clean_customer_payload, enforce_customer_identity_uniqueness
 from models.customer import Customer
 from models.agent import Agent
 from models.property import Property
@@ -92,8 +93,15 @@ def create_customer(
         customer_in.assigned_seller_agent_id,
     )
 
+    payload = clean_customer_payload(customer_in.dict())
+    enforce_customer_identity_uniqueness(
+        db,
+        email=payload.get("email"),
+        phone_number=payload.get("phone_number"),
+    )
+
     # Create the record
-    new_customer = Customer(**customer_in.dict())
+    new_customer = Customer(**payload)
     db.add(new_customer)
     db.commit()
     db.refresh(new_customer)
@@ -138,12 +146,19 @@ def update_customer(
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    updates = customer_in.dict(exclude_unset=True)
+    updates = clean_customer_payload(customer_in.dict(exclude_unset=True))
 
     validate_agent_assignments(
         db,
         updates.get("assigned_buyer_agent_id", customer.assigned_buyer_agent_id),
         updates.get("assigned_seller_agent_id", customer.assigned_seller_agent_id),
+    )
+
+    enforce_customer_identity_uniqueness(
+        db,
+        email=updates.get("email", customer.email),
+        phone_number=updates.get("phone_number", customer.phone_number),
+        exclude_customer_id=customer.customer_id,
     )
 
     for field, value in updates.items():

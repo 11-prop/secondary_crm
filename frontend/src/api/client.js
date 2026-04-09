@@ -1,8 +1,38 @@
 // frontend/src/api/client.js
 import axios from 'axios';
 
+function normalizeConfiguredBaseURL(rawBaseURL) {
+    if (!rawBaseURL) {
+        return '';
+    }
+
+    const configuredBaseURL = rawBaseURL.trim();
+    if (!configuredBaseURL || typeof window === 'undefined') {
+        return configuredBaseURL;
+    }
+
+    try {
+        const resolvedURL = new URL(configuredBaseURL, window.location.origin);
+
+        if (
+            window.location.protocol === 'https:' &&
+            resolvedURL.protocol === 'http:' &&
+            resolvedURL.hostname === window.location.hostname
+        ) {
+            resolvedURL.protocol = 'https:';
+            if (resolvedURL.port === '80') {
+                resolvedURL.port = '';
+            }
+        }
+
+        return resolvedURL.toString().replace(/\/$/, '');
+    } catch {
+        return configuredBaseURL;
+    }
+}
+
 function resolveBaseURL() {
-    const configuredBaseURL = import.meta.env.VITE_API_BASE_URL;
+    const configuredBaseURL = normalizeConfiguredBaseURL(import.meta.env.VITE_API_BASE_URL);
 
     if (typeof window !== 'undefined') {
         const isDirectLocalPreview =
@@ -13,9 +43,13 @@ function resolveBaseURL() {
         if (isDirectLocalPreview) {
             return `${window.location.protocol}//${window.location.hostname}:9000/api`;
         }
+
+        if (!configuredBaseURL) {
+            return `${window.location.origin}/api`;
+        }
     }
 
-    return configuredBaseURL || 'http://localhost:9000/api';
+    return configuredBaseURL || '/api';
 }
 
 const baseURL = resolveBaseURL();

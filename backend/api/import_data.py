@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from io import BytesIO
 
 from configs.settings import get_db
+from core.customer_identity import clean_customer_payload, find_customer_by_identity
 from models.customer import Customer
 from models.property import Property
 from schemas.response import APIResponse
@@ -42,23 +43,39 @@ def bulk_import_excel(
 
         # Iterate through the rows
         for index, row in df.iterrows():
-            email = str(row.get('email', '')).strip()
-            if not email or email == 'nan':
-                continue # Skip rows without emails for safety
-                
+            payload = clean_customer_payload({
+                'first_name': row.get('first_name', 'Unknown'),
+                'last_name': row.get('last_name', ''),
+                'email': row.get('email', ''),
+                'phone_number': row.get('phone_number', ''),
+            })
+
+            if not payload.get('email') and not payload.get('phone_number'):
+                continue
+
             # 1. Create or find Customer
-            customer = db.query(Customer).filter(Customer.email == email).first()
+            customer = find_customer_by_identity(
+                db,
+                email=payload.get('email'),
+                phone_number=payload.get('phone_number'),
+            )
             if not customer:
-                customer = Customer(
-                    first_name=str(row.get('first_name', 'Unknown')),
-                    last_name=str(row.get('last_name', '')),
-                    email=email,
-                    phone_number=str(row.get('phone_number', ''))
-                )
+                customer = Customer(**payload)
                 db.add(customer)
                 db.commit()
                 db.refresh(customer)
                 customers_added += 1
+            else:
+                updated = False
+                if not customer.email and payload.get('email'):
+                    customer.email = payload['email']
+                    updated = True
+                if not customer.phone_number and payload.get('phone_number'):
+                    customer.phone_number = payload['phone_number']
+                    updated = True
+                if updated:
+                    db.commit()
+                    db.refresh(customer)
 
             # 2. Create or find Property and link to Customer
             villa_number = str(row.get('villa_number', '')).strip()
