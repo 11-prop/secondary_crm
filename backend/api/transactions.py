@@ -216,6 +216,7 @@ def get_property_transactions(
     return APIPaginatedResponse(status="success", status_code=200, message="Transactions retrieved", data=transactions, meta=meta)
 
 
+@router.post("", response_model=APIResponse[TransactionResponse], include_in_schema=False)
 @router.post("/", response_model=APIResponse[TransactionResponse])
 def create_transaction(
     transaction_in: TransactionCreate,

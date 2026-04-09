@@ -19,6 +19,7 @@ def get_customer_notes(customer_id: int, skip: int = 0, limit: int = 100, db: Se
     meta = PaginationMeta(total_records=total, total_pages=(total+limit-1)//limit, current_page=(skip//limit)+1, limit=limit, has_next=(skip+limit)<total, has_prev=skip>0)
     return APIPaginatedResponse(status="success", status_code=200, message="Notes retrieved", data=notes, meta=meta)
 
+@router.post("", response_model=APIResponse[InteractionNoteResponse], include_in_schema=False)
 @router.post("/", response_model=APIResponse[InteractionNoteResponse])
 def create_interaction_note(note_in: InteractionNoteCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     new_note = InteractionNote(**note_in.dict())

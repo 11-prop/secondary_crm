@@ -160,7 +160,7 @@ export async function listNotesByCustomer(customerId) {
 }
 
 export async function createNote(payload) {
-    return unwrapItem(await post("/interaction_notes", payload));
+    return unwrapItem(await post("/interaction_notes/", payload));
 }
 
 export async function listTransactionsByProperty(propertyId) {
@@ -168,7 +168,7 @@ export async function listTransactionsByProperty(propertyId) {
 }
 
 export async function createTransaction(payload) {
-    return unwrapItem(await post("/transactions", payload));
+    return unwrapItem(await post("/transactions/", payload));
 }
 
 export async function uploadImage(folder, file) {
