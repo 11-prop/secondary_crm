@@ -8,26 +8,21 @@ function normalizeConfiguredBaseURL(rawBaseURL) {
 
     const configuredBaseURL = rawBaseURL.trim();
     if (!configuredBaseURL || typeof window === 'undefined') {
-        return configuredBaseURL;
+        return configuredBaseURL.replace(/\/$/, '');
     }
 
     try {
         const resolvedURL = new URL(configuredBaseURL, window.location.origin);
+        const isSameHostname = resolvedURL.hostname === window.location.hostname;
 
-        if (
-            window.location.protocol === 'https:' &&
-            resolvedURL.protocol === 'http:' &&
-            resolvedURL.hostname === window.location.hostname
-        ) {
-            resolvedURL.protocol = 'https:';
-            if (resolvedURL.port === '80') {
-                resolvedURL.port = '';
-            }
+        if (isSameHostname) {
+            const normalizedPath = `${resolvedURL.pathname}${resolvedURL.search}${resolvedURL.hash}`.replace(/\/$/, '');
+            return normalizedPath || '/';
         }
 
         return resolvedURL.toString().replace(/\/$/, '');
     } catch {
-        return configuredBaseURL;
+        return configuredBaseURL.replace(/\/$/, '');
     }
 }
 
